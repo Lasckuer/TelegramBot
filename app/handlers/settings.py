@@ -88,7 +88,7 @@ async def sub_day_process(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "menu_export")
 async def export_start(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Выберите начальную дату для экспорта:", reply_markup=kb_reply.get_calendar_kb())
+    await callback.message.edit_text("Выберите начальную дату для экспорта:", reply_markup=kb_inline.get_calendar_kb())
     await state.set_state(ExportState.start_date)
     await callback.answer()
 

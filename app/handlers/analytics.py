@@ -16,7 +16,7 @@ router = Router()
 @router.callback_query(F.data == "menu_balance")
 async def show_balance(callback: types.CallbackQuery):
     report = db.get_balance_report()
-    await callback.message.edit_text(report, parse_mode="HTML", reply_markup=kb_reply.get_inline_analytics_menu())
+    await callback.message.edit_text(report, parse_mode="HTML", reply_markup=kb_inline.get_inline_analytics_menu())
     await callback.answer()
 
 @router.callback_query(F.data == "menu_chart")
