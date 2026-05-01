@@ -561,3 +561,11 @@ async def process_income_amount(message: types.Message, state: FSMContext):
     db.add_income(data['source'], data['name'], int(float(message.text)))
     await message.answer("✅ Доход успешно записан!", reply_markup=kb.get_incomes_menu())
     await state.clear()
+
+# ==========================================
+# --- БАЛАНС ---
+# ==========================================
+@router.message(F.text == "Баланс")
+async def show_balance(message: types.Message):
+    report = db.get_balance_report()
+    await message.answer(report, parse_mode="HTML")

@@ -8,7 +8,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 def get_main_menu():
     buttons = [
         [KeyboardButton(text="Расходы"), KeyboardButton(text="Доходы")],
-        [KeyboardButton(text="Настройки")]
+        [KeyboardButton(text="Баланс"), KeyboardButton(text="Настройки")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
