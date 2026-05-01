@@ -7,13 +7,12 @@ from datetime import datetime
 from aiogram import Router, F, Bot, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import FSInputFile
 
 import keyboards as kb
-from states import ExpenseForm, LimitState, SearchState, SubState, ExportState, IncomeForm
+from states import ExpenseForm, LimitState, SearchState, SubState, ExportState, IncomeForm, EditState
 from gsheets import GoogleTable
 from qr_scanner import decode_qr, fetch_receipt_data
-from states import EditState
 
 router = Router()
 db = GoogleTable()
@@ -42,178 +41,7 @@ def save_subs(subs):
     with open(SUBS_FILE, 'w', encoding='utf-8') as f:
         json.dump(subs, f, ensure_ascii=False, indent=4)
 
-# ==========================================
-# --- НАВИГАЦИЯ ПО МЕНЮ ---
-# ==========================================
-@router.message(Command("start"))
-@router.message(F.text == "Назад")
-async def main_menu(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Главное меню:", reply_markup=kb.get_main_menu())
-
-@router.message(F.text == "Расходы")
-async def expenses_menu(message: types.Message):
-    await message.answer("Раздел 'Расходы':", reply_markup=kb.get_expenses_menu())
-
-@router.message(F.text == "Настройки")
-async def settings_menu(message: types.Message):
-    await message.answer("Раздел 'Настройки':", reply_markup=kb.get_settings_menu())
-
-# ==========================================
-# --- УВЕДОМЛЕНИЯ О ПОДПИСКАХ ---
-# ==========================================
-@router.message(F.text == "Уведомления")
-async def setup_notifications(message: types.Message, state: FSMContext):
-    subs = load_subs()
-    text = "🗓 Ваши текущие подписки/платежи:\n"
-    if not subs:
-        text += "Пусто.\n"
-    else:
-        for s in subs:
-            text += f"🔹 {s['name']} — {s['amount']}р (День оплаты: {s['day']}-го числа)\n"
-    
-    text += "\nЧтобы добавить новое уведомление, введите название подписки:"
-    await message.answer(text, reply_markup=kb.get_cancel_kb())
-    await state.set_state(SubState.waiting_for_name)
-
-@router.message(SubState.waiting_for_name)
-async def sub_name_process(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        return await main_menu(message, state)
-    await state.update_data(name=message.text)
-    await message.answer("Введите сумму платежа (число):")
-    await state.set_state(SubState.waiting_for_amount)
-
-@router.message(SubState.waiting_for_amount)
-async def sub_amount_process(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        return await message.answer("Пожалуйста, введите только число.")
-    await state.update_data(amount=int(message.text))
-    await message.answer("В какой день месяца присылать уведомление? (число от 1 до 31):")
-    await state.set_state(SubState.waiting_for_day)
-
-@router.message(SubState.waiting_for_day)
-async def sub_day_process(message: types.Message, state: FSMContext):
-    if not message.text.isdigit() or not (1 <= int(message.text) <= 31):
-        return await message.answer("Введите корректный день (число от 1 до 31).")
-    
-    data = await state.get_data()
-    new_sub = {"name": data['name'], "amount": data['amount'], "day": int(message.text)}
-    subs = load_subs()
-    subs.append(new_sub)
-    save_subs(subs)
-    
-    await message.answer(f"✅ Напоминание сохранено!\n{new_sub['name']} ({new_sub['amount']}р) — {new_sub['day']}-го числа каждого месяца.", reply_markup=kb.get_settings_menu())
-    await state.clear()
-
-# ==========================================
-# --- ГРАФИКИ ---
-# ==========================================
-
-@router.message(F.text == "График")
-async def send_graph(message: types.Message):
-    await message.answer("Создаю график...")
-    df = db.get_all_df()
-    if df.empty:
-        return await message.answer("Нет данных для графика")
-    
-    df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
-    summary = df.groupby('Категория')['Стоимость'].sum()
-    
-    plt.figure(figsize=(10, 6))
-    summary.plot(kind='pie', autopct='%1.1f%%', startangle=140)
-    plt.title("Расходы по категориям")
-    plt.ylabel("")
-    
-    graph_path = "graph.png"
-    plt.savefig(graph_path)
-    plt.close()
-    
-    await message.answer_photo(FSInputFile(graph_path), caption="Аналитика в графиках")
-    if os.path.exists(graph_path):
-        os.remove(graph_path)
-
-# ==========================================
-# --- ЭКСПОРТ С КАЛЕНДАРЕМ ---
-# ==========================================
-@router.message(F.text == "Экспорт")
-async def export_start(message: types.Message, state: FSMContext):
-    await message.answer("Выберите начальную дату для экспорта:", reply_markup=kb.get_calendar_kb())
-    await state.set_state(ExportState.start_date)
-
-@router.callback_query(F.data.startswith("calendar_nav_"))
-async def calendar_nav(callback: types.CallbackQuery):
-    parts = callback.data.split("_")
-    year, month = int(parts[2]), int(parts[3])
-    await callback.message.edit_reply_markup(reply_markup=kb.get_calendar_kb(year, month))
-    await callback.answer()
-
-@router.callback_query(F.data == "calendar_ignore")
-async def calendar_ignore(callback: types.CallbackQuery):
-    await callback.answer()
-
-@router.callback_query(F.data == "calendar_cancel")
-async def calendar_cancel(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.delete()
-    await callback.message.answer("Экспорт отменен.", reply_markup=kb.get_settings_menu())
-
-@router.callback_query(F.data.startswith("calendar_day_"))
-async def calendar_day(callback: types.CallbackQuery, state: FSMContext):
-    parts = callback.data.split("_")
-    year, month, day = int(parts[2]), int(parts[3]), int(parts[4])
-    selected_date = datetime(year, month, day)
-
-    current_state = await state.get_state()
-
-    if current_state == ExportState.start_date.state:
-        await state.update_data(start_date=selected_date)
-        await callback.message.edit_text(
-            f"Начальная дата: {selected_date.strftime('%d.%m.%Y')}\nТеперь выберите конечную дату:",
-            reply_markup=kb.get_calendar_kb(year, month)
-        )
-        await state.set_state(ExportState.end_date)
-    
-    elif current_state == ExportState.end_date.state:
-        data = await state.get_data()
-        start_date = data['start_date']
-        end_date = selected_date
-
-        if end_date < start_date:
-            start_date, end_date = end_date, start_date
-
-        await callback.message.delete()
-        await callback.message.answer(f"Формирую отчет с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}...")
-        await state.clear()
-
-        df = db.get_all_df()
-        if df.empty or 'Дата' not in df.columns:
-            return await callback.message.answer("Таблица пуста или нет колонки с датами.")
-
-        df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
-        filtered_df = df[(df['Дата_dt'] >= start_date) & (df['Дата_dt'] <= end_date)].copy()
-        filtered_df.drop(columns=['Дата_dt'], inplace=True, errors='ignore')
-
-        if filtered_df.empty:
-            return await callback.message.answer("За выбранный период нет записей.")
-
-        file_path = f"expenses_{start_date.strftime('%d%m%Y')}_{end_date.strftime('%d%m%Y')}.xlsx"
-        filtered_df.to_excel(file_path, index=False)
-        await callback.message.answer_document(FSInputFile(file_path), caption="Ваш отчет в Excel")
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
-
-# ==========================================
-# --- ПОИСК ---
-# ==========================================
-@router.message(F.text == "Поиск")
-async def search_start(message: types.Message, state: FSMContext):
-    await message.answer("Введите название товара или магазина для поиска:", reply_markup=kb.get_cancel_kb())
-    await state.set_state(SearchState.waiting_for_query)
-
 def generate_page_text(matches: list, query: str, page: int, per_page: int = 5):
-    """Вспомогательная функция для генерации текста одной страницы"""
     import math
     total_pages = math.ceil(len(matches) / per_page)
     start = page * per_page
@@ -228,6 +56,143 @@ def generate_page_text(matches: list, query: str, page: int, per_page: int = 5):
     markup = kb.get_pagination_kb(page, total_pages)
     return text, markup
 
+# ==========================================
+# --- НАВИГАЦИЯ ПО ГЛАВНОМУ МЕНЮ ---
+# ==========================================
+@router.message(Command("start"))
+@router.message(F.text == "Назад")
+async def main_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню:", reply_markup=kb.get_main_menu())
+
+@router.message(F.text == "💸 Расходы")
+async def expenses_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("<b>Управление расходами:</b>", reply_markup=kb.get_inline_expenses_menu(), parse_mode="HTML")
+
+@router.message(F.text == "💰 Доходы")
+async def incomes_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("<b>Управление доходами:</b>", reply_markup=kb.get_inline_incomes_menu(), parse_mode="HTML")
+
+@router.message(F.text == "📊 Аналитика")
+async def analytics_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("<b>Финансовая сводка:</b>", reply_markup=kb.get_inline_analytics_menu(), parse_mode="HTML")
+
+@router.message(F.text == "⚙️ Настройки")
+async def settings_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("<b>Настройки профиля:</b>", reply_markup=kb.get_inline_settings_menu(), parse_mode="HTML")
+
+# ==========================================
+# --- РАСХОДЫ ---
+# ==========================================
+@router.callback_query(F.data == "menu_add_exp")
+async def start_expense(callback: types.CallbackQuery):
+    await callback.message.edit_text("Выбери категорию:", reply_markup=kb.get_inline_categories_kb("addcat"))
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("addcat_"))
+async def select_category_inline(callback: types.CallbackQuery, state: FSMContext):
+    category = callback.data.split("_")[1]
+    await state.set_state(ExpenseForm.category)
+    await state.update_data(category=category)
+    await state.set_state(ExpenseForm.name)
+    await callback.message.delete()
+    await callback.message.answer(f"Внесение расхода в <b>{category}</b>.\nВведите название:", parse_mode="HTML", reply_markup=kb.get_cancel_kb())
+    await callback.answer()
+
+@router.message(ExpenseForm.name)
+async def process_name(message: types.Message, state: FSMContext):
+    if message.text == "Назад":
+        return await main_menu(message, state)
+    await state.update_data(name=message.text)
+    await state.set_state(ExpenseForm.price)
+    await message.answer("Введите стоимость:")
+
+@router.message(ExpenseForm.price)
+async def process_price(message: types.Message, state: FSMContext):
+    if not message.text.replace('.','',1).isdigit():
+        return await message.answer("Введите только число!")
+    
+    if float(message.text) > LIMIT:
+        await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {LIMIT}р!")
+        
+    await state.update_data(price=message.text)
+    await state.set_state(ExpenseForm.shop)
+    await message.answer("Магазин (или 'нет'):")
+
+@router.message(ExpenseForm.shop)
+async def process_shop(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    shop = message.text if message.text.lower() != 'нет' else "-"
+    db.add_expense(data['category'], data['name'], data['price'], shop)
+    
+    if shop != "-":
+        cmap = load_cat_map()
+        cmap[shop.lower().strip()] = data['category']
+        save_cat_map(cmap)
+        
+    await message.answer("✅ Записано!", reply_markup=kb.get_main_menu())
+    await state.clear()
+
+@router.callback_query(F.data == "menu_scan_exp")
+async def ask_for_receipt(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.delete()
+    await callback.message.answer("Отправь мне фотографию QR-кода с чека (без сжатия или крупным планом).", reply_markup=kb.get_cancel_kb())
+    await callback.answer()
+
+@router.message(F.photo)
+async def handle_receipt_photo(message: types.Message, bot: Bot):
+    await message.answer("⏳ Анализирую QR-код...")
+    photo = message.photo[-1]
+    file_path = f"temp_{photo.file_id}.jpg"
+    await bot.download(photo, destination=file_path)
+    
+    qr_string = decode_qr(file_path)
+    if os.path.exists(file_path):
+        os.remove(file_path) 
+    
+    if not qr_string:
+        return await message.answer("❌ QR-код не найден.", reply_markup=kb.get_main_menu())
+    
+    await message.answer("🔍 Запрашиваю данные из ФНС...")
+    
+    try:
+        receipt_data = await fetch_receipt_data(qr_string)
+        if not receipt_data or receipt_data.get('code') != 1:
+            return await message.answer("❌ Ошибка получения данных чека.", reply_markup=kb.get_main_menu())
+        
+        items = receipt_data['data']['json']['items']
+        added_count = 0
+        total_sum = 0
+        shop_name = receipt_data['data']['json'].get('user') or receipt_data['data']['json'].get('retailPlace', 'Магазин из чека')
+        
+        cmap = load_cat_map()
+        assigned_cat = cmap.get(shop_name.lower().strip(), "Продукты")
+        
+        for item in items:
+            name = item.get('name', 'Неизвестный товар')
+            price = math.ceil(int(item.get('sum', 0)) / 100)
+            
+            db.add_expense(category=assigned_cat, name=name, price=price, shop=shop_name)
+            added_count += 1
+            total_sum += price
+            
+        await message.answer(f"✅ Добавлено {added_count} позиций (Категория: {assigned_cat}).\nНа сумму: {total_sum}р.", reply_markup=kb.get_main_menu())
+        
+    except Exception:
+        await message.answer("❌ Произошла ошибка при обработке.", reply_markup=kb.get_main_menu())
+
+@router.callback_query(F.data == "menu_search_exp")
+async def search_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer("Введите название товара или магазина для поиска:", reply_markup=kb.get_cancel_kb())
+    await state.set_state(SearchState.waiting_for_query)
+    await callback.answer()
+
 @router.message(SearchState.waiting_for_query)
 async def search_process(message: types.Message, state: FSMContext):
     if message.text == "Назад":
@@ -235,7 +200,7 @@ async def search_process(message: types.Message, state: FSMContext):
 
     df = db.get_all_df()
     if df.empty:
-        await message.answer("Таблица расходов пока пуста.", reply_markup=kb.get_expenses_menu())
+        await message.answer("Таблица расходов пока пуста.", reply_markup=kb.get_main_menu())
         return await state.clear()
 
     query = message.text.lower()
@@ -248,7 +213,7 @@ async def search_process(message: types.Message, state: FSMContext):
     ]
     
     if result.empty:
-        await message.answer("Ничего не найдено.", reply_markup=kb.get_expenses_menu())
+        await message.answer("Ничего не найдено.", reply_markup=kb.get_main_menu())
         return await state.clear()
     
     matches = result.to_dict('records')
@@ -272,62 +237,10 @@ async def process_page_callback(callback: types.CallbackQuery, state: FSMContext
     await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
     await callback.answer()
 
-# ==========================================
-# --- ВНЕСЕНИЕ РАСХОДА (ИНЛАЙН ВЫБОР) ---
-# ==========================================
-@router.message(F.text == "Внести расход")
-async def start_expense(message: types.Message):
-    await message.answer("Выбери категорию:", reply_markup=kb.get_inline_categories_kb("addcat"))
-
-@router.callback_query(F.data.startswith("addcat_"))
-async def select_category_inline(callback: types.CallbackQuery, state: FSMContext):
-    category = callback.data.split("_")[1]
-    await state.set_state(ExpenseForm.category)
-    await state.update_data(category=category)
-    await state.set_state(ExpenseForm.name)
-    await callback.message.edit_text(f"Внесение расхода в <b>{category}</b>.\nВведите название:", parse_mode="HTML")
+@router.callback_query(F.data == "menu_manage_exp")
+async def start_manage_inline(callback: types.CallbackQuery):
+    await callback.message.edit_text("В какой категории?", reply_markup=kb.get_inline_categories_kb("mngcat"))
     await callback.answer()
-
-@router.message(ExpenseForm.name)
-async def process_name(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        return await main_menu(message, state)
-    await state.update_data(name=message.text)
-    await state.set_state(ExpenseForm.price)
-    await message.answer("Введите стоимость:")
-
-@router.message(ExpenseForm.price)
-async def process_price(message: types.Message, state: FSMContext):
-    if not message.text.replace('.','',1).isdigit():
-        return await message.answer("Введите только число!")
-    
-    if float(message.text) > LIMIT:
-        await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {LIMIT}р!")
-        
-    await state.update_data(price=message.text)
-    await state.set_state(ExpenseForm.shop)
-    await message.answer("Магазин (или 'нет'):")
-
-router.message(ExpenseForm.shop)
-async def process_shop(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    shop = message.text if message.text.lower() != 'нет' else "-"
-    db.add_expense(data['category'], data['name'], data['price'], shop)
-    
-    if shop != "-":
-        cmap = load_cat_map()
-        cmap[shop.lower().strip()] = data['category']
-        save_cat_map(cmap)
-        
-    await message.answer("✅ Записано!", reply_markup=kb.get_expenses_menu())
-    await state.clear()
-
-# ==========================================
-# --- УПРАВЛЕНИЕ ---
-# ==========================================
-@router.message(F.text == "Управление")
-async def start_manage_inline(message: types.Message):
-    await message.answer("В какой категории?", reply_markup=kb.get_inline_categories_kb("mngcat"))
 
 @router.callback_query(F.data.startswith("mngcat_"))
 async def show_items_to_manage(callback: types.CallbackQuery):
@@ -357,13 +270,15 @@ async def edit_name_start(callback: types.CallbackQuery, state: FSMContext):
     row_idx = int(callback.data.split("_")[1])
     await state.update_data(edit_row=row_idx)
     await state.set_state(EditState.waiting_for_new_name)
-    await callback.message.edit_text("Введите новое название:")
+    await callback.message.delete()
+    await callback.message.answer("Введите новое название:", reply_markup=kb.get_cancel_kb())
+    await callback.answer()
 
 @router.message(EditState.waiting_for_new_name)
 async def edit_name_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.update_cell(data['edit_row'], 2, message.text)
-    await message.answer("✅ Название обновлено!", reply_markup=kb.get_expenses_menu())
+    await message.answer("✅ Название обновлено!", reply_markup=kb.get_main_menu())
     await state.clear()
     
 @router.callback_query(F.data.startswith("editprice_"))
@@ -371,99 +286,101 @@ async def edit_price_start(callback: types.CallbackQuery, state: FSMContext):
     row_idx = int(callback.data.split("_")[1])
     await state.update_data(edit_row=row_idx)
     await state.set_state(EditState.waiting_for_new_price)
-    await callback.message.edit_text("Введите новую цену:")
+    await callback.message.delete()
+    await callback.message.answer("Введите новую цену:", reply_markup=kb.get_cancel_kb())
+    await callback.answer()
 
 @router.message(EditState.waiting_for_new_price)
 async def edit_price_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.update_cell(data['edit_row'], 3, int(message.text))
-    await message.answer("✅ Цена обновлена!", reply_markup=kb.get_expenses_menu())
+    await message.answer("✅ Цена обновлена!", reply_markup=kb.get_main_menu())
     await state.clear()
 
 # ==========================================
-# --- ВНЕСЕНИЕ РАСХОДА (QR ЧЕК) ---
+# --- ДОХОДЫ ---
 # ==========================================
-@router.message(F.text == "Отсканировать чек")
-async def ask_for_receipt(message: types.Message, state: FSMContext):
-    # Эта функция реагирует на кнопку "Отсканировать чек"
-    # На всякий случай очищаем FSM, чтобы бот точно ждал фото
+@router.callback_query(F.data == "menu_add_inc")
+async def start_income(callback: types.CallbackQuery):
+    await callback.message.edit_text("Выбери источник дохода:", reply_markup=kb.get_inline_income_categories_kb("addinc"))
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("addinc_"))
+async def select_income_source(callback: types.CallbackQuery, state: FSMContext):
+    source = callback.data.split("_")[1]
+    await state.set_state(IncomeForm.source)
+    await state.update_data(source=source)
+    await state.set_state(IncomeForm.name)
+    await callback.message.delete()
+    await callback.message.answer(f"Источник: <b>{source}</b>.\nОт кого или за что этот доход?", parse_mode="HTML", reply_markup=kb.get_cancel_kb())
+    await callback.answer()
+
+@router.message(IncomeForm.name)
+async def process_income_name(message: types.Message, state: FSMContext):
+    if message.text == "Назад":
+        return await main_menu(message, state)
+    await state.update_data(name=message.text)
+    await state.set_state(IncomeForm.amount)
+    await message.answer("Введите сумму дохода:")
+
+@router.message(IncomeForm.amount)
+async def process_income_amount(message: types.Message, state: FSMContext):
+    if not message.text.replace('.', '', 1).isdigit():
+        return await message.answer("Введите только число!")
+    
+    data = await state.get_data()
+    db.add_income(data['source'], data['name'], int(float(message.text)))
+    await message.answer("✅ Доход успешно записан!", reply_markup=kb.get_main_menu())
     await state.clear()
-    await message.answer("Отправь мне фотографию QR-кода с чека (без сжатия или крупным планом).", reply_markup=kb.get_cancel_kb())
 
-@router.message(F.photo)
-async def handle_receipt_photo(message: types.Message, bot: Bot):
-    await message.answer("⏳ Анализирую QR-код...")
-    photo = message.photo[-1]
-    file_path = f"temp_{photo.file_id}.jpg"
-    await bot.download(photo, destination=file_path)
-    
-    qr_string = decode_qr(file_path)
-    if os.path.exists(file_path):
-        os.remove(file_path) 
-    
-    if not qr_string:
-        return await message.answer("❌ QR-код не найден.", reply_markup=kb.get_expenses_menu())
-    
-    await message.answer("🔍 Запрашиваю данные из ФНС...")
-    
-    try:
-        receipt_data = await fetch_receipt_data(qr_string)
-        if not receipt_data or receipt_data.get('code') != 1:
-            return await message.answer("❌ Ошибка получения данных чека.", reply_markup=kb.get_expenses_menu())
-        
-        items = receipt_data['data']['json']['items']
-        added_count = 0
-        total_sum = 0
-        shop_name = receipt_data['data']['json'].get('user') or receipt_data['data']['json'].get('retailPlace', 'Магазин из чека')
-        
-        cmap = load_cat_map()
-        assigned_cat = cmap.get(shop_name.lower().strip(), "Продукты")
-        
-        for item in items:
-            name = item.get('name', 'Неизвестный товар')
-            price = math.ceil(int(item.get('sum', 0)) / 100)
-            
-            db.add_expense(category=assigned_cat, name=name, price=price, shop=shop_name)
-            added_count += 1
-            total_sum += price
-            
-        await message.answer(f"✅ Добавлено {added_count} позиций (Категория: {assigned_cat}).\nНа сумму: {total_sum}р.", reply_markup=kb.get_expenses_menu())
-        
-    except Exception:
-        await message.answer("❌ Произошла ошибка при обработке.", reply_markup=kb.get_expenses_menu())
+@router.callback_query(F.data == "menu_manage_inc")
+async def manage_inc_stub(callback: types.CallbackQuery):
+    await callback.answer("Управление доходами скоро появится ⏳", show_alert=True)
 
 # ==========================================
-# --- ОТЧЕТЫ И ЛИМИТЫ ---
+# --- АНАЛИТИКА ---
 # ==========================================
-@router.message(F.text == "Отчеты")
-async def report_cmd(message: types.Message):
-    await message.answer(db.get_monthly_analytics())
+@router.callback_query(F.data == "menu_balance")
+async def show_balance(callback: types.CallbackQuery):
+    report = db.get_balance_report()
+    await callback.message.edit_text(report, parse_mode="HTML", reply_markup=kb.get_inline_analytics_menu())
+    await callback.answer()
 
-@router.message(F.text == "Лимиты")
-async def show_limits(message: types.Message, state: FSMContext):
-    await message.answer(f"Лимит: {LIMIT}р. Введите новое число:", reply_markup=kb.get_cancel_kb())
-    await state.set_state(LimitState.waiting_for_limit)
+@router.callback_query(F.data == "menu_chart")
+async def send_graph(callback: types.CallbackQuery):
+    await callback.message.delete()
+    msg = await callback.message.answer("Создаю график...")
+    df = db.get_all_df()
+    if df.empty:
+        await msg.delete()
+        return await callback.message.answer("Нет данных для графика", reply_markup=kb.get_main_menu())
+    
+    df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
+    summary = df.groupby('Категория')['Стоимость'].sum()
+    
+    plt.figure(figsize=(10, 6))
+    summary.plot(kind='pie', autopct='%1.1f%%', startangle=140)
+    plt.title("Расходы по категориям")
+    plt.ylabel("")
+    
+    graph_path = "graph.png"
+    plt.savefig(graph_path)
+    plt.close()
+    
+    await msg.delete()
+    await callback.message.answer_photo(FSInputFile(graph_path), caption="Аналитика в графиках", reply_markup=kb.get_main_menu())
+    if os.path.exists(graph_path):
+        os.remove(graph_path)
+    await callback.answer()
 
-@router.message(LimitState.waiting_for_limit)
-async def set_limit(message: types.Message, state: FSMContext):
-    global LIMIT
-    if message.text.isdigit():
-        LIMIT = int(message.text)
-        await message.answer(f"✅ Лимит изменен: {LIMIT}р", reply_markup=kb.get_settings_menu())
-        await state.clear()
-    else:
-        await message.answer("Введите число.")
-        
-# ==========================================
-# --- СРАВНЕНИЕ МЕСЯЦЕВ ---
-# ==========================================
-@router.message(F.text == "Сравнение")
-async def compare_months(message: types.Message):
+@router.callback_query(F.data == "menu_compare")
+async def compare_months(callback: types.CallbackQuery):
     from datetime import datetime
     
     df = db.get_all_df()
     if df.empty or 'Дата' not in df.columns:
-        return await message.answer("Нет данных для сравнения. Сначала внесите расходы.")
+        await callback.answer("Нет данных для сравнения.", show_alert=True)
+        return
 
     df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
     df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
@@ -485,7 +402,8 @@ async def compare_months(message: types.Message):
     all_categories = set(curr_grouped.index).union(set(prev_grouped.index))
 
     if not all_categories:
-        return await message.answer("В этом и прошлом месяце нет трат для сравнения.")
+        await callback.answer("Нет трат за периоды.", show_alert=True)
+        return
 
     text = "📊 <b>Сравнение с прошлым месяцем:</b>\n\n"
     total_curr = curr_grouped.sum()
@@ -522,50 +440,140 @@ async def compare_months(message: types.Message):
         else:
             text += f"➖ Потрачено ровно столько же ({total_curr}р)"
 
-    await message.answer(text, parse_mode="HTML")
-    
-# ==========================================
-# --- ДОХОДЫ ---
-# ==========================================
-@router.message(F.text == "Доходы")
-async def incomes_menu(message: types.Message):
-    await message.answer("Раздел 'Доходы':", reply_markup=kb.get_incomes_menu())
-
-@router.message(F.text == "Внести доход")
-async def start_income(message: types.Message):
-    await message.answer("Выбери источник дохода:", reply_markup=kb.get_inline_income_categories_kb("addinc"))
-
-@router.callback_query(F.data.startswith("addinc_"))
-async def select_income_source(callback: types.CallbackQuery, state: FSMContext):
-    source = callback.data.split("_")[1]
-    await state.set_state(IncomeForm.source)
-    await state.update_data(source=source)
-    await state.set_state(IncomeForm.name)
-    await callback.message.edit_text(f"Источник: <b>{source}</b>.\nОт кого или за что этот доход?", parse_mode="HTML")
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_inline_analytics_menu())
     await callback.answer()
 
-@router.message(IncomeForm.name)
-async def process_income_name(message: types.Message, state: FSMContext):
+# ==========================================
+# --- НАСТРОЙКИ ---
+# ==========================================
+@router.callback_query(F.data == "menu_limits")
+async def show_limits(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer(f"Лимит: {LIMIT}р. Введите новое число:", reply_markup=kb.get_cancel_kb())
+    await state.set_state(LimitState.waiting_for_limit)
+    await callback.answer()
+
+@router.message(LimitState.waiting_for_limit)
+async def set_limit(message: types.Message, state: FSMContext):
+    global LIMIT
+    if message.text.isdigit():
+        LIMIT = int(message.text)
+        await message.answer(f"✅ Лимит изменен: {LIMIT}р", reply_markup=kb.get_main_menu())
+        await state.clear()
+    else:
+        await message.answer("Введите число.")
+
+@router.callback_query(F.data == "menu_notifications")
+async def setup_notifications(callback: types.CallbackQuery, state: FSMContext):
+    subs = load_subs()
+    text = "🗓 Ваши текущие подписки/платежи:\n"
+    if not subs:
+        text += "Пусто.\n"
+    else:
+        for s in subs:
+            text += f"🔹 {s['name']} — {s['amount']}р (День оплаты: {s['day']}-го числа)\n"
+    
+    text += "\nЧтобы добавить новое уведомление, введите название подписки:"
+    await callback.message.delete()
+    await callback.message.answer(text, reply_markup=kb.get_cancel_kb())
+    await state.set_state(SubState.waiting_for_name)
+    await callback.answer()
+
+@router.message(SubState.waiting_for_name)
+async def sub_name_process(message: types.Message, state: FSMContext):
     if message.text == "Назад":
         return await main_menu(message, state)
     await state.update_data(name=message.text)
-    await state.set_state(IncomeForm.amount)
-    await message.answer("Введите сумму дохода:")
+    await message.answer("Введите сумму платежа (число):")
+    await state.set_state(SubState.waiting_for_amount)
 
-@router.message(IncomeForm.amount)
-async def process_income_amount(message: types.Message, state: FSMContext):
-    if not message.text.replace('.', '', 1).isdigit():
-        return await message.answer("Введите только число!")
+@router.message(SubState.waiting_for_amount)
+async def sub_amount_process(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        return await message.answer("Пожалуйста, введите только число.")
+    await state.update_data(amount=int(message.text))
+    await message.answer("В какой день месяца присылать уведомление? (число от 1 до 31):")
+    await state.set_state(SubState.waiting_for_day)
+
+@router.message(SubState.waiting_for_day)
+async def sub_day_process(message: types.Message, state: FSMContext):
+    if not message.text.isdigit() or not (1 <= int(message.text) <= 31):
+        return await message.answer("Введите корректный день (число от 1 до 31).")
     
     data = await state.get_data()
-    db.add_income(data['source'], data['name'], int(float(message.text)))
-    await message.answer("✅ Доход успешно записан!", reply_markup=kb.get_incomes_menu())
+    new_sub = {"name": data['name'], "amount": data['amount'], "day": int(message.text)}
+    subs = load_subs()
+    subs.append(new_sub)
+    save_subs(subs)
+    
+    await message.answer(f"✅ Напоминание сохранено!\n{new_sub['name']} ({new_sub['amount']}р) — {new_sub['day']}-го числа каждого месяца.", reply_markup=kb.get_main_menu())
     await state.clear()
 
-# ==========================================
-# --- БАЛАНС ---
-# ==========================================
-@router.message(F.text == "Баланс")
-async def show_balance(message: types.Message):
-    report = db.get_balance_report()
-    await message.answer(report, parse_mode="HTML")
+@router.callback_query(F.data == "menu_export")
+async def export_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("Выберите начальную дату для экспорта:", reply_markup=kb.get_calendar_kb())
+    await state.set_state(ExportState.start_date)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("calendar_nav_"))
+async def calendar_nav(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    year, month = int(parts[2]), int(parts[3])
+    await callback.message.edit_reply_markup(reply_markup=kb.get_calendar_kb(year, month))
+    await callback.answer()
+
+@router.callback_query(F.data == "calendar_ignore")
+async def calendar_ignore(callback: types.CallbackQuery):
+    await callback.answer()
+
+@router.callback_query(F.data == "calendar_cancel")
+async def calendar_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.delete()
+    await callback.message.answer("Экспорт отменен.", reply_markup=kb.get_main_menu())
+
+@router.callback_query(F.data.startswith("calendar_day_"))
+async def calendar_day(callback: types.CallbackQuery, state: FSMContext):
+    parts = callback.data.split("_")
+    year, month, day = int(parts[2]), int(parts[3]), int(parts[4])
+    selected_date = datetime(year, month, day)
+
+    current_state = await state.get_state()
+
+    if current_state == ExportState.start_date.state:
+        await state.update_data(start_date=selected_date)
+        await callback.message.edit_text(
+            f"Начальная дата: {selected_date.strftime('%d.%m.%Y')}\nТеперь выберите конечную дату:",
+            reply_markup=kb.get_calendar_kb(year, month)
+        )
+        await state.set_state(ExportState.end_date)
+    
+    elif current_state == ExportState.end_date.state:
+        data = await state.get_data()
+        start_date = data['start_date']
+        end_date = selected_date
+
+        if end_date < start_date:
+            start_date, end_date = end_date, start_date
+
+        await callback.message.delete()
+        await callback.message.answer(f"Формирую отчет с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}...", reply_markup=kb.get_main_menu())
+        await state.clear()
+
+        df = db.get_all_df()
+        if df.empty or 'Дата' not in df.columns:
+            return await callback.message.answer("Таблица пуста или нет колонки с датами.")
+
+        df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
+        filtered_df = df[(df['Дата_dt'] >= start_date) & (df['Дата_dt'] <= end_date)].copy()
+        filtered_df.drop(columns=['Дата_dt'], inplace=True, errors='ignore')
+
+        if filtered_df.empty:
+            return await callback.message.answer("За выбранный период нет записей.")
+
+        file_path = f"expenses_{start_date.strftime('%d%m%Y')}_{end_date.strftime('%d%m%Y')}.xlsx"
+        filtered_df.to_excel(file_path, index=False)
+        await callback.message.answer_document(FSInputFile(file_path), caption="Ваш отчет в Excel")
+        
+        if os.path.exists(file_path):
+            os.remove(file_path)

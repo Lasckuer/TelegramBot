@@ -1,37 +1,72 @@
-# ==========================================
-# --- KEYBOARDS.PY ---
-# ==========================================
 import calendar
 from datetime import datetime
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+# --- НИЖНЕЕ МЕНЮ (ГЛАВНЫЕ ВКЛАДКИ) ---
 def get_main_menu():
     buttons = [
-        [KeyboardButton(text="Расходы"), KeyboardButton(text="Доходы")],
-        [KeyboardButton(text="Баланс"), KeyboardButton(text="Настройки")]
+        [KeyboardButton(text="💸 Расходы"), KeyboardButton(text="💰 Доходы")],
+        [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="⚙️ Настройки")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_expenses_menu():
-    buttons = [
-        [KeyboardButton(text="Внести расход"), KeyboardButton(text="Управление")],
-        [KeyboardButton(text="Отсканировать чек"), KeyboardButton(text="Поиск")],
-        [KeyboardButton(text="Отчеты"), KeyboardButton(text="Сравнение")],
-        [KeyboardButton(text="Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_settings_menu():
-    buttons = [
-        [KeyboardButton(text="Экспорт"), KeyboardButton(text="График")],
-        [KeyboardButton(text="Лимиты"), KeyboardButton(text="Уведомления")],
-        [KeyboardButton(text="Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
+# Кнопка отмены для состояний ввода текста (оставляем обычную)
 def get_cancel_kb():
-    buttons = [[KeyboardButton(text="Назад")]]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Назад")]], resize_keyboard=True)
+
+# --- ИНЛАЙН-МЕНЮ ДЛЯ КАЖДОЙ ВКЛАДКИ ---
+
+def get_inline_expenses_menu():
+    buttons = [
+        [InlineKeyboardButton(text="✍️ Внести вручную", callback_data="menu_add_exp"),
+         InlineKeyboardButton(text="🧾 Скан чека", callback_data="menu_scan_exp")],
+        [InlineKeyboardButton(text="🔍 Поиск", callback_data="menu_search_exp"),
+         InlineKeyboardButton(text="✏️ Управление", callback_data="menu_manage_exp")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_incomes_menu():
+    buttons = [
+        [InlineKeyboardButton(text="➕ Внести доход", callback_data="menu_add_inc"),
+         InlineKeyboardButton(text="✏️ Управление", callback_data="menu_manage_inc")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_analytics_menu():
+    buttons = [
+        [InlineKeyboardButton(text="⚖️ Баланс месяца", callback_data="menu_balance")],
+        [InlineKeyboardButton(text="📈 График расходов", callback_data="menu_chart"),
+         InlineKeyboardButton(text="🗓 Сравнение", callback_data="menu_compare")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_settings_menu():
+    buttons = [
+        [InlineKeyboardButton(text="🎯 Лимиты", callback_data="menu_limits"),
+         InlineKeyboardButton(text="🔔 Уведомления", callback_data="menu_notifications")],
+        [InlineKeyboardButton(text="📥 Экспорт в Excel", callback_data="menu_export")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# --- ОСТАЛЬНЫЕ ИНЛАЙН-КЛАВИАТУРЫ (Оставляем как было) ---
+def get_inline_categories_kb(prefix: str):
+    buttons = [
+        [InlineKeyboardButton(text="Продукты", callback_data=f"{prefix}_Продукты"),
+         InlineKeyboardButton(text="Развлечения", callback_data=f"{prefix}_Развлечения")],
+        [InlineKeyboardButton(text="Ежемесячные", callback_data=f"{prefix}_Ежемесячные"),
+         InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_income_categories_kb(prefix: str):
+    buttons = [
+        [InlineKeyboardButton(text="Зарплата", callback_data=f"{prefix}_Зарплата"),
+         InlineKeyboardButton(text="Фриланс", callback_data=f"{prefix}_Фриланс")],
+        [InlineKeyboardButton(text="Кэшбэк/Бонусы", callback_data=f"{prefix}_Кэшбэк"),
+         InlineKeyboardButton(text="Переводы", callback_data=f"{prefix}_Переводы")],
+        [InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_pagination_kb(page: int, total_pages: int):
     buttons = []
@@ -79,48 +114,6 @@ def get_calendar_kb(year: int = None, month: int = None):
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-def get_incomes_menu():
-    buttons = [
-        [KeyboardButton(text="Внести доход")],
-        [KeyboardButton(text="Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-def get_inline_income_categories_kb(prefix: str):
-    buttons = [
-        [InlineKeyboardButton(text="Зарплата", callback_data=f"{prefix}_Зарплата"),
-         InlineKeyboardButton(text="Фриланс", callback_data=f"{prefix}_Фриланс")],
-        [InlineKeyboardButton(text="Кэшбэк/Бонусы", callback_data=f"{prefix}_Кэшбэк"),
-         InlineKeyboardButton(text="Переводы", callback_data=f"{prefix}_Переводы")],
-        [InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def get_inline_categories_kb(prefix: str):
-    buttons = [
-        [InlineKeyboardButton(text="Продукты", callback_data=f"{prefix}_Продукты"),
-         InlineKeyboardButton(text="Развлечения", callback_data=f"{prefix}_Развлечения")],
-        [InlineKeyboardButton(text="Ежемесячные", callback_data=f"{prefix}_Ежемесячные"),
-         InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def get_inline_delete_items_kb(items: list):
-    buttons = []
-    for item in items:
-        text = f"{item.get('Название', 'Без названия')} — {item.get('Стоимость', 0)}р"
-        row_idx = item.get('row_idx')
-        buttons.append([InlineKeyboardButton(text=text, callback_data=f"delitem_{row_idx}")])
-    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def get_inline_confirm_kb(row_idx: int):
-    buttons = [
-        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"delconfirm_{row_idx}"),
-         InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")]
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_inline_manage_items_kb(items: list):
     buttons = []
