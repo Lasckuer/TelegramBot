@@ -13,7 +13,7 @@ def get_main_menu():
 
 def get_expenses_menu():
     buttons = [
-        [KeyboardButton(text="Внести расход"), KeyboardButton(text="Удалить запись")],
+        [KeyboardButton(text="Внести расход"), KeyboardButton(text="Управление")],
         [KeyboardButton(text="Отсканировать чек"), KeyboardButton(text="Поиск")],
         [KeyboardButton(text="Отчеты"), KeyboardButton(text="Сравнение")],
         [KeyboardButton(text="Назад")]
@@ -104,5 +104,23 @@ def get_inline_confirm_kb(row_idx: int):
     buttons = [
         [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"delconfirm_{row_idx}"),
          InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_manage_items_kb(items: list):
+    buttons = []
+    for item in items:
+        text = f"{item.get('Название', 'Без названия')} — {item.get('Стоимость', 0)}р"
+        row_idx = item.get('row_idx')
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"manageitem_{row_idx}")])
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_item_action_kb(row_idx: int):
+    buttons = [
+        [InlineKeyboardButton(text="✏️ Название", callback_data=f"editname_{row_idx}"),
+         InlineKeyboardButton(text="✏️ Цену", callback_data=f"editprice_{row_idx}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delconfirm_{row_idx}")],
+        [InlineKeyboardButton(text="❌ Назад", callback_data="delcancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

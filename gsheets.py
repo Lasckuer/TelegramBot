@@ -65,3 +65,6 @@ class GoogleTable:
     def delete_by_row(self, row_number):
         self.sheet.delete_rows(row_number)
         return True
+    def update_cell(self, row_idx: int, col_idx: int, value):
+        self.sheet.update_cell(row_idx, col_idx, value)
+        return True

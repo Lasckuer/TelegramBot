@@ -13,12 +13,24 @@ import keyboards as kb
 from states import ExpenseForm, LimitState, SearchState, SubState, ExportState
 from gsheets import GoogleTable
 from qr_scanner import decode_qr, fetch_receipt_data
+from states import EditState
 
 router = Router()
 db = GoogleTable()
 
 LIMIT = 50000
 SUBS_FILE = "subs.json"
+CAT_MAP_FILE = "cat_map.json"
+
+def load_cat_map():
+    if not os.path.exists(CAT_MAP_FILE):
+        return {}
+    with open(CAT_MAP_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_cat_map(mapping):
+    with open(CAT_MAP_FILE, 'w', encoding='utf-8') as f:
+        json.dump(mapping, f, ensure_ascii=False, indent=4)
 
 def load_subs():
     if not os.path.exists(SUBS_FILE):
@@ -296,58 +308,77 @@ async def process_price(message: types.Message, state: FSMContext):
     await state.set_state(ExpenseForm.shop)
     await message.answer("Магазин (или 'нет'):")
 
-@router.message(ExpenseForm.shop)
+router.message(ExpenseForm.shop)
 async def process_shop(message: types.Message, state: FSMContext):
     data = await state.get_data()
     shop = message.text if message.text.lower() != 'нет' else "-"
     db.add_expense(data['category'], data['name'], data['price'], shop)
+    
+    if shop != "-":
+        cmap = load_cat_map()
+        cmap[shop.lower().strip()] = data['category']
+        save_cat_map(cmap)
+        
     await message.answer("✅ Записано!", reply_markup=kb.get_expenses_menu())
     await state.clear()
 
 # ==========================================
-# --- УДАЛЕНИЕ ЗАПИСИ (ИНЛАЙН) ---
+# --- УПРАВЛЕНИЕ ---
 # ==========================================
-@router.message(F.text == "Удалить запись")
-async def start_delete_inline(message: types.Message):
-    await message.answer("В какой категории удалить?", reply_markup=kb.get_inline_categories_kb("delcat"))
+@router.message(F.text == "Управление")
+async def start_manage_inline(message: types.Message):
+    await message.answer("В какой категории?", reply_markup=kb.get_inline_categories_kb("mngcat"))
 
-@router.callback_query(F.data.startswith("delcat_"))
-async def show_items_to_delete(callback: types.CallbackQuery):
+@router.callback_query(F.data.startswith("mngcat_"))
+async def show_items_to_manage(callback: types.CallbackQuery):
     category = callback.data.split("_")[1]
     items = db.get_records_by_category(category)
-    
     if not items:
-        await callback.message.edit_text(f"В категории «{category}» записей не найдено.")
-        return await callback.answer()
-    
-    await callback.message.edit_text(
-        f"Последние записи ({category}):\nВыберите для удаления:", 
-        reply_markup=kb.get_inline_delete_items_kb(items)
-    )
-    await callback.answer()
+        return await callback.message.edit_text(f"В категории «{category}» пусто.")
+    await callback.message.edit_text(f"Последние записи ({category}):", reply_markup=kb.get_inline_manage_items_kb(items))
 
-@router.callback_query(F.data.startswith("delitem_"))
-async def confirm_delete_inline(callback: types.CallbackQuery):
+@router.callback_query(F.data.startswith("manageitem_"))
+async def item_actions_inline(callback: types.CallbackQuery):
     row_idx = int(callback.data.split("_")[1])
-    await callback.message.edit_text(
-        "Вы уверены, что хотите удалить эту запись?", 
-        reply_markup=kb.get_inline_confirm_kb(row_idx)
-    )
-    await callback.answer()
+    await callback.message.edit_text("Что сделать с записью?", reply_markup=kb.get_inline_item_action_kb(row_idx))
 
 @router.callback_query(F.data.startswith("delconfirm_"))
 async def execute_delete_inline(callback: types.CallbackQuery):
     row_idx = int(callback.data.split("_")[1])
-    if db.delete_by_row(row_idx):
-        await callback.message.edit_text("✅ Запись успешно удалена.")
-    else:
-        await callback.message.edit_text("❌ Ошибка при удалении.")
-    await callback.answer()
+    db.delete_by_row(row_idx)
+    await callback.message.edit_text("✅ Запись удалена.")
 
 @router.callback_query(F.data == "delcancel")
-async def cancel_delete_inline(callback: types.CallbackQuery):
+async def cancel_manage_inline(callback: types.CallbackQuery):
     await callback.message.edit_text("Действие отменено.")
-    await callback.answer()
+
+@router.callback_query(F.data.startswith("editname_"))
+async def edit_name_start(callback: types.CallbackQuery, state: FSMContext):
+    row_idx = int(callback.data.split("_")[1])
+    await state.update_data(edit_row=row_idx)
+    await state.set_state(EditState.waiting_for_new_name)
+    await callback.message.edit_text("Введите новое название:")
+
+@router.message(EditState.waiting_for_new_name)
+async def edit_name_process(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    db.update_cell(data['edit_row'], 2, message.text)
+    await message.answer("✅ Название обновлено!", reply_markup=kb.get_expenses_menu())
+    await state.clear()
+    
+@router.callback_query(F.data.startswith("editprice_"))
+async def edit_price_start(callback: types.CallbackQuery, state: FSMContext):
+    row_idx = int(callback.data.split("_")[1])
+    await state.update_data(edit_row=row_idx)
+    await state.set_state(EditState.waiting_for_new_price)
+    await callback.message.edit_text("Введите новую цену:")
+
+@router.message(EditState.waiting_for_new_price)
+async def edit_price_process(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    db.update_cell(data['edit_row'], 3, int(message.text))
+    await message.answer("✅ Цена обновлена!", reply_markup=kb.get_expenses_menu())
+    await state.clear()
 
 # ==========================================
 # --- ВНЕСЕНИЕ РАСХОДА (QR ЧЕК) ---
@@ -361,7 +392,6 @@ async def ask_for_receipt(message: types.Message, state: FSMContext):
 
 @router.message(F.photo)
 async def handle_receipt_photo(message: types.Message, bot: Bot):
-    # Эта функция реагирует на присланное фото
     await message.answer("⏳ Анализирую QR-код...")
     photo = message.photo[-1]
     file_path = f"temp_{photo.file_id}.jpg"
@@ -372,41 +402,35 @@ async def handle_receipt_photo(message: types.Message, bot: Bot):
         os.remove(file_path) 
     
     if not qr_string:
-        return await message.answer("❌ Не удалось найти или прочитать QR-код на фото. Попробуй сфоткать крупнее.", reply_markup=kb.get_expenses_menu())
+        return await message.answer("❌ QR-код не найден.", reply_markup=kb.get_expenses_menu())
     
-    await message.answer("🔍 QR найден! Запрашиваю данные из ФНС (это может занять до 15 секунд)...")
+    await message.answer("🔍 Запрашиваю данные из ФНС...")
     
     try:
         receipt_data = await fetch_receipt_data(qr_string)
-        
-        if not receipt_data:
-            return await message.answer("❌ Сервис проверки чеков недоступен или превышено время ожидания.", reply_markup=kb.get_expenses_menu())
-        
-        if receipt_data.get('code') != 1:
-            error_msg = receipt_data.get('data', 'Неизвестная ошибка') if isinstance(receipt_data.get('data'), str) else 'Чек не найден'
-            return await message.answer(f"❌ Ошибка ФНС: {error_msg}\nВозможно, чек еще не попал в базу. Попробуй позже.", reply_markup=kb.get_expenses_menu())
+        if not receipt_data or receipt_data.get('code') != 1:
+            return await message.answer("❌ Ошибка получения данных чека.", reply_markup=kb.get_expenses_menu())
         
         items = receipt_data['data']['json']['items']
         added_count = 0
         total_sum = 0
         shop_name = receipt_data['data']['json'].get('user') or receipt_data['data']['json'].get('retailPlace', 'Магазин из чека')
         
+        cmap = load_cat_map()
+        assigned_cat = cmap.get(shop_name.lower().strip(), "Продукты")
+        
         for item in items:
             name = item.get('name', 'Неизвестный товар')
             price = math.ceil(int(item.get('sum', 0)) / 100)
             
-            db.add_expense(category="Продукты", name=name, price=price, shop=shop_name)
+            db.add_expense(category=assigned_cat, name=name, price=price, shop=shop_name)
             added_count += 1
             total_sum += price
             
-        await message.answer(f"✅ Успешно добавлено {added_count} позиций из магазина «{shop_name}»!\nНа общую сумму: {total_sum}р.", reply_markup=kb.get_expenses_menu())
+        await message.answer(f"✅ Добавлено {added_count} позиций (Категория: {assigned_cat}).\nНа сумму: {total_sum}р.", reply_markup=kb.get_expenses_menu())
         
-    except KeyError as e:
-        print(f"Ошибка ключа (нетипичный чек): {e}")
-        await message.answer("❌ Не удалось разобрать структуру товаров в этом чеке.", reply_markup=kb.get_expenses_menu())
-    except Exception as e:
-        print(f"Непредвиденная ошибка в чеке: {e}")
-        await message.answer("❌ Произошла ошибка при обработке данных чека.", reply_markup=kb.get_expenses_menu())
+    except Exception:
+        await message.answer("❌ Произошла ошибка при обработке.", reply_markup=kb.get_expenses_menu())
 
 # ==========================================
 # --- ОТЧЕТЫ И ЛИМИТЫ ---

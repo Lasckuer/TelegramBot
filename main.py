@@ -7,6 +7,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config import BOT_TOKEN
 from handlers import router, db
 from jobs import send_weekly_report, check_daily_subscriptions
+from config import BOT_TOKEN, USER_ID
+from middlewares import SecurityMiddleware
 
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -22,7 +24,9 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     
-    # Подключаем роутер с хэндлерами
+    dp.message.middleware(SecurityMiddleware(USER_ID))
+    dp.callback_query.middleware(SecurityMiddleware(USER_ID))
+    
     dp.include_router(router)
     
     # Настройка планировщика
@@ -34,6 +38,8 @@ async def main():
     
     print("\n" + "="*30 + "\n✅ БОТ ЗАПУЩЕН\n" + "="*30 + "\n")
     await dp.start_polling(bot)
+    
+    
 
 if __name__ == "__main__":
     try:
