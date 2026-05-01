@@ -4,12 +4,12 @@ from logging.handlers import RotatingFileHandler
 from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config import BOT_TOKEN
-from handlers import get_handlers_router
-from jobs import send_weekly_report, check_daily_subscriptions
-from config import BOT_TOKEN, USER_ID
-from middlewares import SecurityMiddleware
-from utils import db
+from app.config import BOT_TOKEN
+from app.handlers import get_handlers_router
+from app.jobs import send_weekly_report, check_daily_subscriptions
+from app.config import BOT_TOKEN, USER_ID
+from app.middlewares import SecurityMiddleware
+from app.handlers.utils import db
 
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
