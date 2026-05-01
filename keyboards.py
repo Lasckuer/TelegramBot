@@ -1,4 +1,4 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 def get_main_menu():
     buttons = [
@@ -10,7 +10,9 @@ def get_expenses_menu():
     buttons = [
         [KeyboardButton(text="Внести расход"), KeyboardButton(text="Удалить запись")],
         [KeyboardButton(text="Отсканировать чек"), KeyboardButton(text="Поиск")],
-        [KeyboardButton(text="Отчеты"), KeyboardButton(text="Назад")]
+        # Добавили кнопку Сравнение
+        [KeyboardButton(text="Отчеты"), KeyboardButton(text="Сравнение")], 
+        [KeyboardButton(text="Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -33,3 +35,14 @@ def get_categories_kb():
 def get_cancel_kb():
     buttons = [[KeyboardButton(text="Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_pagination_kb(page: int, total_pages: int):
+    buttons = []
+    if page > 0:
+        buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"page_{page-1}"))
+    if page < total_pages - 1:
+        buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"page_{page+1}"))
+    
+    if buttons:
+        return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    return None

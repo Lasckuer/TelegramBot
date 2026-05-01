@@ -29,7 +29,9 @@ def save_subs(subs):
     with open(SUBS_FILE, 'w', encoding='utf-8') as f:
         json.dump(subs, f, ensure_ascii=False, indent=4)
 
+# ==========================================
 # --- НАВИГАЦИЯ ПО МЕНЮ ---
+# ==========================================
 @router.message(Command("start"))
 @router.message(F.text == "Назад")
 async def main_menu(message: types.Message, state: FSMContext):
@@ -44,7 +46,9 @@ async def expenses_menu(message: types.Message):
 async def settings_menu(message: types.Message):
     await message.answer("Раздел 'Настройки':", reply_markup=kb.get_settings_menu())
 
+# ==========================================
 # --- УВЕДОМЛЕНИЯ О ПОДПИСКАХ ---
+# ==========================================
 @router.message(F.text == "Уведомления")
 async def setup_notifications(message: types.Message, state: FSMContext):
     subs = load_subs()
@@ -89,7 +93,9 @@ async def sub_day_process(message: types.Message, state: FSMContext):
     await message.answer(f"✅ Напоминание сохранено!\n{new_sub['name']} ({new_sub['amount']}р) — {new_sub['day']}-го числа каждого месяца.", reply_markup=kb.get_settings_menu())
     await state.clear()
 
+# ==========================================
 # --- ЭКСПОРТ И ГРАФИКИ ---
+# ==========================================
 @router.message(F.text == "Экспорт")
 async def export_to_excel(message: types.Message):
     await message.answer("Формирую Excel файл...")
@@ -126,32 +132,43 @@ async def send_graph(message: types.Message):
     if os.path.exists(graph_path):
         os.remove(graph_path)
 
+# ==========================================
 # --- ПОИСК ---
+# ==========================================
 @router.message(F.text == "Поиск")
 async def search_start(message: types.Message, state: FSMContext):
-    # Эта функция реагирует на кнопку "Поиск"
     await message.answer("Введите название товара или магазина для поиска:", reply_markup=kb.get_cancel_kb())
     await state.set_state(SearchState.waiting_for_query)
 
+def generate_page_text(matches: list, query: str, page: int, per_page: int = 5):
+    """Вспомогательная функция для генерации текста одной страницы"""
+    import math
+    total_pages = math.ceil(len(matches) / per_page)
+    start = page * per_page
+    end = start + per_page
+    page_items = matches[start:end]
+
+    text = f"🔍 Результаты по запросу «{query}» (Стр. {page+1} из {total_pages}):\n\n"
+    for row in page_items:
+        date_str = row.get('Дата', '-')
+        text += f"• <b>{row.get('Название', '-')}</b> — {row.get('Стоимость', 0)}р <i>({date_str})</i>\n"
+
+    markup = kb.get_pagination_kb(page, total_pages)
+    return text, markup
+
 @router.message(SearchState.waiting_for_query)
 async def search_process(message: types.Message, state: FSMContext):
-    # Эта функция ищет текст, который ввел пользователь
     if message.text == "Назад":
         return await main_menu(message, state)
 
     df = db.get_all_df()
-    
     if df.empty:
-        await message.answer("Таблица расходов пока пуста. Искать негде.", reply_markup=kb.get_expenses_menu())
-        await state.clear()
-        return
+        await message.answer("Таблица расходов пока пуста.", reply_markup=kb.get_expenses_menu())
+        return await state.clear()
 
     query = message.text.lower()
-    
-    if 'Название' not in df.columns:
-        df['Название'] = ""
-    if 'Магазин' not in df.columns:
-        df['Магазин'] = ""
+    if 'Название' not in df.columns: df['Название'] = ""
+    if 'Магазин' not in df.columns: df['Магазин'] = ""
 
     result = df[
         df['Название'].astype(str).str.lower().str.contains(query, na=False) | 
@@ -160,14 +177,32 @@ async def search_process(message: types.Message, state: FSMContext):
     
     if result.empty:
         await message.answer("Ничего не найдено.", reply_markup=kb.get_expenses_menu())
-    else:
-        text = "🔍 Результаты поиска:\n\n"
-        for _, row in result.tail(10).iterrows(): 
-            text += f"• {row['Название']} — {row['Стоимость']}р \n"
-        await message.answer(text, reply_markup=kb.get_expenses_menu())
-    await state.clear()
+        return await state.clear()
+    
+    matches = result.to_dict('records')
+    await state.update_data(search_results=matches, query=query)
+    
+    text, markup = generate_page_text(matches, query, page=0)
+    await message.answer(text, reply_markup=markup, parse_mode="HTML")
 
+@router.callback_query(F.data.startswith("page_"))
+async def process_page_callback(callback: types.CallbackQuery, state: FSMContext):
+    page = int(callback.data.split("_")[1])
+    
+    data = await state.get_data()
+    matches = data.get("search_results", [])
+    query = data.get("query", "")
+
+    if not matches:
+        return await callback.answer("Данные устарели. Сделайте поиск заново.", show_alert=True)
+
+    text, markup = generate_page_text(matches, query, page)
+    await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    await callback.answer()
+
+# ==========================================
 # --- Удаление записей ---
+# ==========================================
 @router.message(DeleteState.selecting_category)
 async def list_items_to_delete(message: types.Message, state: FSMContext):
     if message.text == "Назад":
@@ -207,7 +242,9 @@ async def confirm_delete(message: types.Message, state: FSMContext):
         await message.answer("Ошибка.")
     await state.clear()
 
+# ==========================================
 # --- ВНЕСЕНИЕ РАСХОДА (РУЧНОЕ) ---
+# ==========================================
 @router.message(F.text == "Внести расход")
 async def start_expense(message: types.Message):
     await message.answer("Выбери категорию:", reply_markup=kb.get_categories_kb())
@@ -251,7 +288,9 @@ async def process_shop(message: types.Message, state: FSMContext):
     await message.answer("✅ Записано!", reply_markup=kb.get_expenses_menu())
     await state.clear()
 
+# ==========================================
 # --- ВНЕСЕНИЕ РАСХОДА (QR ЧЕК) ---
+# ==========================================
 @router.message(F.text == "Отсканировать чек")
 async def ask_for_receipt(message: types.Message, state: FSMContext):
     # Эта функция реагирует на кнопку "Отсканировать чек"
@@ -308,13 +347,17 @@ async def handle_receipt_photo(message: types.Message, bot: Bot):
         print(f"Непредвиденная ошибка в чеке: {e}")
         await message.answer("❌ Произошла ошибка при обработке данных чека.", reply_markup=kb.get_expenses_menu())
         
+# ==========================================
 # --- УДАЛЕНИЕ ЗАПИСИ ---
+# ==========================================
 @router.message(F.text == "Удалить запись")
 async def start_delete(message: types.Message, state: FSMContext):
     await state.set_state(DeleteState.selecting_category) 
     await message.answer("В какой категории удалить?", reply_markup=kb.get_categories_kb())
 
+# ==========================================
 # --- ОТЧЕТЫ И ЛИМИТЫ ---
+# ==========================================
 @router.message(F.text == "Отчеты")
 async def report_cmd(message: types.Message):
     await message.answer(db.get_monthly_analytics())
@@ -333,3 +376,73 @@ async def set_limit(message: types.Message, state: FSMContext):
         await state.clear()
     else:
         await message.answer("Введите число.")
+        
+# ==========================================
+# --- СРАВНЕНИЕ МЕСЯЦЕВ ---
+# ==========================================
+@router.message(F.text == "Сравнение")
+async def compare_months(message: types.Message):
+    from datetime import datetime
+    
+    df = db.get_all_df()
+    if df.empty or 'Дата' not in df.columns:
+        return await message.answer("Нет данных для сравнения. Сначала внесите расходы.")
+
+    df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
+    df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
+
+    now = datetime.now()
+    curr_month, curr_year = now.month, now.year
+    
+    if curr_month == 1:
+        prev_month, prev_year = 12, curr_year - 1
+    else:
+        prev_month, prev_year = curr_month - 1, curr_year
+
+    curr_df = df[(df['Дата_dt'].dt.month == curr_month) & (df['Дата_dt'].dt.year == curr_year)]
+    prev_df = df[(df['Дата_dt'].dt.month == prev_month) & (df['Дата_dt'].dt.year == prev_year)]
+
+    curr_grouped = curr_df.groupby('Категория')['Стоимость'].sum()
+    prev_grouped = prev_df.groupby('Категория')['Стоимость'].sum()
+
+    all_categories = set(curr_grouped.index).union(set(prev_grouped.index))
+
+    if not all_categories:
+        return await message.answer("В этом и прошлом месяце нет трат для сравнения.")
+
+    text = "📊 <b>Сравнение с прошлым месяцем:</b>\n\n"
+    total_curr = curr_grouped.sum()
+    total_prev = prev_grouped.sum()
+
+    for cat in all_categories:
+        curr_val = curr_grouped.get(cat, 0)
+        prev_val = prev_grouped.get(cat, 0)
+
+        if prev_val == 0 and curr_val > 0:
+            text += f"🔹 <b>{cat}</b>: {curr_val}р (В прошлом месяце трат не было)\n"
+        elif curr_val == 0 and prev_val > 0:
+            text += f"🔹 <b>{cat}</b>: 0р (Траты упали на 100%, было {prev_val}р)\n"
+        else:
+            diff = curr_val - prev_val
+            percent = abs(diff) / prev_val * 100
+            if diff > 0:
+                text += f"🔺 <b>{cat}</b>: {curr_val}р (На {percent:.1f}% больше)\n"
+            elif diff < 0:
+                text += f"🔻 <b>{cat}</b>: {curr_val}р (На {percent:.1f}% меньше)\n"
+            else:
+                text += f"➖ <b>{cat}</b>: {curr_val}р (Без изменений)\n"
+
+    text += "\n💰 <b>ИТОГО:</b>\n"
+    if total_prev == 0:
+        text += f"В этом месяце: {total_curr}р (В прошлом не было трат)"
+    else:
+        diff_total = total_curr - total_prev
+        perc_total = abs(diff_total) / total_prev * 100
+        if diff_total > 0:
+            text += f"🔺 Вы потратили на <b>{perc_total:.1f}% больше</b> ({total_curr}р против {total_prev}р)"
+        elif diff_total < 0:
+            text += f"🔻 Вы <b>сэкономили {perc_total:.1f}%</b> ({total_curr}р против {total_prev}р)"
+        else:
+            text += f"➖ Потрачено ровно столько же ({total_curr}р)"
+
+    await message.answer(text, parse_mode="HTML")
