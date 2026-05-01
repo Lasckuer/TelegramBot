@@ -1,5 +1,6 @@
 import asyncio
 import os
+import json
 import logging
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -17,8 +18,7 @@ try:
 except ImportError:
     pytesseract = None
 
-from config import BOT_TOKEN
-from config import USER_ID
+from config import BOT_TOKEN, USER_ID, PROVERKA_CHEKA_TOKEN
 from gsheets import GoogleTable
 
 # Настройки
@@ -30,8 +30,21 @@ db = GoogleTable()
 
 scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
-# --- СОСТОЯНИЯ ---
+LIMIT = 50000 # Дефолтный лимит, чтобы код не падал, если он еще не задан
+SUBS_FILE = "subs.json"
 
+# --- РАБОТА С ПОДПИСКАМИ (ХРАНЕНИЕ В JSON) ---
+def load_subs():
+    if not os.path.exists(SUBS_FILE):
+        return []
+    with open(SUBS_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_subs(subs):
+    with open(SUBS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(subs, f, ensure_ascii=False, indent=4)
+
+# --- СОСТОЯНИЯ ---
 class ExpenseForm(StatesGroup):
     category = State()
     name = State()
@@ -48,14 +61,31 @@ class LimitState(StatesGroup):
 class SearchState(StatesGroup):
     waiting_for_query = State()
 
-# --- КЛАВИАТУРЫ ---
+class SubState(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_amount = State()
+    waiting_for_day = State()
 
+# --- КЛАВИАТУРЫ ---
 def get_main_menu():
     buttons = [
-        [KeyboardButton(text="Внести расход"), KeyboardButton(text="Отчеты")],
-        [KeyboardButton(text="Поиск"), KeyboardButton(text="Экспорт")],
-        [KeyboardButton(text="График"), KeyboardButton(text="Удалить запись")],
-        [KeyboardButton(text="Лимиты")]
+        [KeyboardButton(text="Расходы"), KeyboardButton(text="Настройки")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_expenses_menu():
+    buttons = [
+        [KeyboardButton(text="Внести расход"), KeyboardButton(text="Удалить запись")],
+        [KeyboardButton(text="Поиск"), KeyboardButton(text="Отчеты")],
+        [KeyboardButton(text="Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_settings_menu():
+    buttons = [
+        [KeyboardButton(text="Экспорт"), KeyboardButton(text="График")],
+        [KeyboardButton(text="Лимиты"), KeyboardButton(text="Уведомления")],
+        [KeyboardButton(text="Назад")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -71,16 +101,93 @@ def get_cancel_kb():
     buttons = [[KeyboardButton(text="Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-# --- ОБЩИЕ ОБРАБОТЧИКИ ---
 
+# --- НАВИГАЦИЯ ПО МЕНЮ ---
 @dp.message(Command("start"))
 @dp.message(F.text == "Назад")
 async def main_menu(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("Главное меню:", reply_markup=get_main_menu())
 
-# --- ЭКСПОРТ И ГРАФИКИ ---
+@dp.message(F.text == "Расходы")
+async def expenses_menu(message: types.Message):
+    await message.answer("Раздел 'Расходы':", reply_markup=get_expenses_menu())
 
+@dp.message(F.text == "Настройки")
+async def settings_menu(message: types.Message):
+    await message.answer("Раздел 'Настройки':", reply_markup=get_settings_menu())
+
+
+# --- УВЕДОМЛЕНИЯ О ПОДПИСКАХ ---
+@dp.message(F.text == "Уведомления")
+async def setup_notifications(message: types.Message, state: FSMContext):
+    subs = load_subs()
+    text = "🗓 Ваши текущие подписки/платежи:\n"
+    if not subs:
+        text += "Пусто.\n"
+    else:
+        for s in subs:
+            text += f"🔹 {s['name']} — {s['amount']}р (День оплаты: {s['day']}-го числа)\n"
+    
+    text += "\nЧтобы добавить новое уведомление, введите название подписки (например, 'Spotify' или 'Интернет'):"
+    await message.answer(text, reply_markup=get_cancel_kb())
+    await state.set_state(SubState.waiting_for_name)
+
+@dp.message(SubState.waiting_for_name)
+async def sub_name_process(message: types.Message, state: FSMContext):
+    if message.text == "Назад":
+        return await main_menu(message, state)
+    
+    await state.update_data(name=message.text)
+    await message.answer("Введите сумму платежа (число):")
+    await state.set_state(SubState.waiting_for_amount)
+
+@dp.message(SubState.waiting_for_amount)
+async def sub_amount_process(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        return await message.answer("Пожалуйста, введите только число.")
+    
+    await state.update_data(amount=int(message.text))
+    await message.answer("В какой день месяца присылать уведомление? (число от 1 до 31):")
+    await state.set_state(SubState.waiting_for_day)
+
+@dp.message(SubState.waiting_for_day)
+async def sub_day_process(message: types.Message, state: FSMContext):
+    if not message.text.isdigit() or not (1 <= int(message.text) <= 31):
+        return await message.answer("Введите корректный день (число от 1 до 31).")
+    
+    data = await state.get_data()
+    new_sub = {
+        "name": data['name'],
+        "amount": data['amount'],
+        "day": int(message.text)
+    }
+    
+    subs = load_subs()
+    subs.append(new_sub)
+    save_subs(subs)
+    
+    await message.answer(f"✅ Напоминание сохранено!\n{new_sub['name']} ({new_sub['amount']}р) — {new_sub['day']}-го числа каждого месяца.", reply_markup=get_settings_menu())
+    await state.clear()
+
+
+# --- АВТОМАТИЗАЦИЯ (РАССЫЛКИ И НАПОМИНАНИЯ) ---
+async def send_weekly_report():
+    msg = db.get_monthly_analytics()
+    # Отправляем сообщение пользователю
+    await bot.send_message(user_id, f"📅 <b>Еженедельный отчет по расходам:</b>\n\n{msg}", parse_mode="HTML")
+
+async def check_daily_subscriptions():
+    subs = load_subs()
+    today_day = datetime.now().day
+    
+    for sub in subs:
+        if sub['day'] == today_day:
+            text = f"🔔 <b>Напоминание об оплате!</b>\nСегодня нужно оплатить: <b>{sub['name']}</b>\nСумма: {sub['amount']}р."
+            await bot.send_message(user_id, text, parse_mode="HTML")
+
+
+# --- ЭКСПОРТ И ГРАФИКИ ---
 @dp.message(F.text == "Экспорт")
 async def export_to_excel(message: types.Message):
     await message.answer("Формирую Excel файл...")
@@ -100,7 +207,6 @@ async def send_graph(message: types.Message):
     if df.empty:
         return await message.answer("Нет данных для графика")
     
-    # Превращаем стоимость в числа для расчетов
     df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
     summary = df.groupby('Категория')['Стоимость'].sum()
     
@@ -116,8 +222,8 @@ async def send_graph(message: types.Message):
     await message.answer_photo(FSInputFile(graph_path), caption="Аналитика в графиках")
     os.remove(graph_path)
 
-# --- ПОИСК ---
 
+# --- ПОИСК ---
 @dp.message(F.text == "Поиск")
 async def search_start(message: types.Message, state: FSMContext):
     await message.answer("Введите название товара или магазина для поиска:", reply_markup=get_cancel_kb())
@@ -126,37 +232,33 @@ async def search_start(message: types.Message, state: FSMContext):
 @dp.message(SearchState.waiting_for_query)
 async def search_process(message: types.Message, state: FSMContext):
     if message.text == "Назад":
-        await main_menu(message, state)
-        return
+        return await main_menu(message, state)
 
     df = db.get_all_df()
     query = message.text.lower()
-    # Ищем и в названиях, и в магазинах
     result = df[df['Название'].str.lower().str.contains(query, na=False) | 
                 df['Магазин'].str.lower().str.contains(query, na=False)]
     
     if result.empty:
-        await message.answer("Ничего не найдено.", reply_markup=get_main_menu())
+        await message.answer("Ничего не найдено.", reply_markup=get_expenses_menu())
     else:
         text = "🔍 Результаты поиска:\n\n"
-        for _, row in result.tail(10).iterrows(): # Показываем последние 10 совпадений
+        for _, row in result.tail(10).iterrows(): 
             text += f"• {row['Название']} — {row['Стоимость']}р \n"
-        await message.answer(text, reply_markup=get_main_menu())
+        await message.answer(text, reply_markup=get_expenses_menu())
     await state.clear()
 
 
-# --- Обработчик для удаления ---
+#--- УДАЛЕНИЕ ЗАПИСИ ---
 
 @dp.message(DeleteState.selecting_category)
 async def list_items_to_delete(message: types.Message, state: FSMContext):
     if message.text == "Назад":
-        await main_menu(message, state)
-        return
+        return await main_menu(message, state)
 
-    # Теперь этот код сработает только если мы в DeleteState
     items = db.get_records_by_category(message.text)
     if not items:
-        await message.answer("Записей не найдено.", reply_markup=get_main_menu())
+        await message.answer("Записей не найдено.", reply_markup=get_expenses_menu())
         await state.clear()
         return
 
@@ -177,45 +279,32 @@ async def list_items_to_delete(message: types.Message, state: FSMContext):
 @dp.message(DeleteState.selecting_item)
 async def confirm_delete(message: types.Message, state: FSMContext):
     if message.text == "Назад":
-        await main_menu(message, state)
-        return
+        return await main_menu(message, state)
 
     data = await state.get_data()
     row = data.get('delete_map', {}).get(message.text)
     
     if row and db.delete_by_row(int(row)):
-        await message.answer("✅ Удалено.", reply_markup=get_main_menu())
+        await message.answer("✅ Удалено.", reply_markup=get_expenses_menu())
     else:
         await message.answer("Ошибка.")
     await state.clear()
 
 # --- ВНЕСЕНИЕ РАСХОДА ---
-
 @dp.message(F.text == "Внести расход")
 async def start_expense(message: types.Message):
     await message.answer("Выбери категорию:", reply_markup=get_categories_kb())
 
 @dp.message(F.text.in_(["Продукты", "Развлечения", "Ежемесячные", "Остальное"]))
-async def select_category_for_input(message: types.Message, state: FSMContext):
-    # Если мы дошли сюда, значит мы НЕ в состоянии удаления
-    await state.update_data(category=message.text)
-    await state.set_state(ExpenseForm.name)
-    await message.answer(f"Категория: {message.text}. Введите название:", reply_markup=get_cancel_kb())
-    
-@dp.message(F.text.in_(["Продукты", "Развлечения", "Ежемесячные", "Остальное"]))
 async def select_category_default(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
-    
-    # Если мы уже в процессе удаления, игнорируем этот общий обработчик
     if current_state == DeleteState.selecting_category:
         return 
 
-    # Иначе запускаем ввод расхода
     await state.set_state(ExpenseForm.category)
     await state.update_data(category=message.text)
     await state.set_state(ExpenseForm.name)
     await message.answer(f"Внесение расхода в {message.text}. Введите название:", reply_markup=get_cancel_kb())
-    
     
 @dp.message(ExpenseForm.name)
 async def process_name(message: types.Message, state: FSMContext):
@@ -240,19 +329,18 @@ async def process_shop(message: types.Message, state: FSMContext):
     data = await state.get_data()
     shop = message.text if message.text.lower() != 'нет' else "-"
     db.add_expense(data['category'], data['name'], data['price'], shop)
-    await message.answer("✅ Записано!", reply_markup=get_main_menu())
+    await message.answer("✅ Записано!", reply_markup=get_expenses_menu())
     await state.clear()
 
-# --- УДАЛЕНИЕ ---
 
+# --- УДАЛЕНИЕ ---
 @dp.message(F.text == "Удалить запись")
 async def start_delete(message: types.Message, state: FSMContext):
-    await state.set_state(DeleteState.selecting_category) # Устанавливаем состояние ПЕРЕД выбором
+    await state.set_state(DeleteState.selecting_category) 
     await message.answer("В какой категории удалить?", reply_markup=get_categories_kb())
 
 
 # --- ОТЧЕТЫ И ЛИМИТЫ ---
-
 @dp.message(F.text == "Отчеты")
 async def report_cmd(message: types.Message):
     await message.answer(db.get_monthly_analytics())
@@ -267,15 +355,23 @@ async def set_limit(message: types.Message, state: FSMContext):
     global LIMIT
     if message.text.isdigit():
         LIMIT = int(message.text)
-        await message.answer(f"✅ Лимит изменен: {LIMIT}р", reply_markup=get_main_menu())
+        await message.answer(f"✅ Лимит изменен: {LIMIT}р", reply_markup=get_settings_menu())
         await state.clear()
     else:
         await message.answer("Введите число.")
 
-# --- ЗАПУСК ---
 
+# --- ЗАПУСК ---
 async def on_startup_notify():
     print("\n" + "="*30 + "\n✅ БОТ ЗАПУЩЕН\n" + "="*30 + "\n")
+    
+    # Настраиваем еженедельный отчет (Каждое воскресенье в 12:00)
+    scheduler.add_job(send_weekly_report, "cron", day_of_week="sun", hour=12, minute=0)
+    
+    # Настраиваем ежедневную проверку подписок (Каждый день в 10:00)
+    scheduler.add_job(check_daily_subscriptions, "cron", hour=10, minute=0)
+    
+    scheduler.start()
 
 async def main():
     dp.startup.register(on_startup_notify)
