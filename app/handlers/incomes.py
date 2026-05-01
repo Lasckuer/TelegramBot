@@ -1,11 +1,10 @@
-import keyboards.inline as kb_inline
-import keyboards.reply as kb_reply
+import app.keyboards.inline as kb_inline
+import app.keyboards.reply as kb_reply
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 
-import keyboards as kb
-from states import IncomeForm
-from gsheets import GoogleTable
+from ..states import IncomeForm
+from ..gsheets import GoogleTable
 from .common import main_menu
 
 router = Router()

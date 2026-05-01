@@ -2,11 +2,11 @@ import time
 from datetime import datetime
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-import keyboards.inline as kb_inline
-import keyboards.reply as kb_reply
-from states import DebtForm
+import app.keyboards.inline as kb_inline
+import app.keyboards.reply as kb_reply
+from ..states import DebtForm
 from .common import main_menu
-from utils import load_debts, save_debts, load_subs, db
+from .utils import load_debts, save_debts, load_subs, db
 
 router = Router()
 

@@ -1,8 +1,8 @@
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-import keyboards.reply as kb_reply
-import keyboards.inline as kb_inline
+import app.keyboards.reply as kb_reply
+import app.keyboards.inline as kb_inline
 
 router = Router()
 

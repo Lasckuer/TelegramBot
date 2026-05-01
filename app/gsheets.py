@@ -1,7 +1,7 @@
 import gspread
 import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
-from config import SPREADSHEET_ID, JSON_KEYFILE
+from .config import SPREADSHEET_ID, JSON_KEYFILE
 from datetime import datetime
 
 class GoogleTable:

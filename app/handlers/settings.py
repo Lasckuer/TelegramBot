@@ -5,12 +5,11 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile
 
-import keyboards as kb
-import keyboards.reply as kb_reply
-import keyboards.inline as kb_inline
-from states import LimitState, SubState, ExportState
-from gsheets import GoogleTable
-from utils import load_subs, save_subs
+import app.keyboards.reply as kb_reply
+import app.keyboards.inline as kb_inline
+from ..states import LimitState, SubState, ExportState
+from ..gsheets import GoogleTable
+from .utils import load_subs, save_subs
 from .common import main_menu
 
 router = Router()

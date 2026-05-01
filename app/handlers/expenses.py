@@ -2,14 +2,14 @@ import math
 import os
 from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
-import keyboards.inline as kb_inline
-import keyboards.reply as kb_reply
-from states import ExpenseForm, SearchState, EditState
-from gsheets import GoogleTable
-from qr_scanner import decode_qr, fetch_receipt_data
+import app.keyboards.inline as kb_inline
+import app.keyboards.reply as kb_reply
+from ..states import ExpenseForm, SearchState, EditState
+from ..gsheets import GoogleTable
+from .qr_scanner import decode_qr, fetch_receipt_data
 import aiohttp
 from .common import main_menu
-from utils import load_cat_map, save_cat_map, generate_page_text
+from .utils import load_cat_map, save_cat_map, generate_page_text
 
 router = Router()
 db = GoogleTable()

@@ -1,7 +1,7 @@
 import os
 import json
-import keyboards.inline as kb_inline
-from gsheets import GoogleTable
+import app.keyboards.inline as kb_inline
+from ..gsheets import GoogleTable
 
 db = GoogleTable()
 

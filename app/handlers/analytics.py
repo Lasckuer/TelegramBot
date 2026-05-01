@@ -3,9 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from aiogram import Router, F, types
 from aiogram.types import FSInputFile
-import keyboards.inline as kb_inline
-import keyboards.reply as kb_reply
-from utils import db
+import app.keyboards.inline as kb_inline
+import app.keyboards.reply as kb_reply
+from .utils import db
 
 router = Router()
 

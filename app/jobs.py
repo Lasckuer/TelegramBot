@@ -1,8 +1,8 @@
 import os
 import json
 from datetime import datetime
-from config import USER_ID
-import keyboards as kb
+from .config import USER_ID
+import app.keyboards.inline as kb_inline
 
 SUBS_FILE = "subs.json"
 DEBTS_FILE = "debts.json"
@@ -29,7 +29,7 @@ async def check_daily_subscriptions(bot):
     for idx, sub in enumerate(subs):
         if sub['day'] == today_day:
             text = f"🔔 <b>Оплата подписки!</b>\nСегодня день списания за <b>{sub['name']}</b> ({sub['amount']}р).\nЗанести в расходы?"
-            await bot.send_message(USER_ID, text, parse_mode="HTML", reply_markup=kb.get_inline_sub_action_kb(idx))
+            await bot.send_message(USER_ID, text, parse_mode="HTML", reply_markup=kb_inline.get_inline_sub_action_kb(idx))
 
 async def check_daily_debts(bot):
     debts = load_debts()
@@ -37,4 +37,4 @@ async def check_daily_debts(bot):
     for debt in debts:
         if debt['deadline'] == today_str:
             text = f"⚠️ <b>Напоминание о долге!</b>\nСегодня <b>{debt['person']}</b> должен вернуть {debt['amount']}р."
-            await bot.send_message(USER_ID, text, parse_mode="HTML", reply_markup=kb.get_inline_debt_return_kb(debt['id']))
+            await bot.send_message(USER_ID, text, parse_mode="HTML", reply_markup=kb_inline.get_inline_debt_return_kb(debt['id']))
