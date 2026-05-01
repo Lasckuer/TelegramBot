@@ -20,3 +20,7 @@ class SubState(StatesGroup):
     waiting_for_name = State()
     waiting_for_amount = State()
     waiting_for_day = State()
+    
+class ExportState(StatesGroup):
+    start_date = State()
+    end_date = State()
