@@ -37,17 +37,20 @@ PROVERKA_CHEKA_TOKEN=токен_от_proverkacheka_com
 JSON_KEYFILE=service_account.json
 ```
 > Также поместите ваш файл секретного ключа `service_account.json` в корень проекта.
-> `service_account.json` получаеться на сайте https://console.cloud.google.com/ (инструкция будет добавлена в дальнейшем).
-> 'токен_от_proverkacheka_com' можно получить на https://proverkacheka.com/ (инструкция будет добавлена в дальнейшем).
 
-### 3. Настройка виртуального окружения и зависимостей
+### 3. 📖 Документация
+Подробные инструкции по настройке проекта вынесены в отдельные файлы:
+* [Инструкция по настройке Google API](docs/google_setup.md) — как создать сервисный аккаунт и подключить таблицы.
+* [Работа со сканером чеков](docs/receipts.md) — как получить токен и правильно фотографировать чеки.
+
+### 4. Настройка виртуального окружения и зависимостей
 ```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Запуск бота
+### 5. Запуск бота
 ```bash
 python main.py
 ```
