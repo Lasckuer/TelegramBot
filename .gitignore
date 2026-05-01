@@ -1,0 +1,29 @@
+# Среда разработки
+__pycache__/
+*.py[cod]
+*$py.class
+.idea/
+.vscode/
+
+# Виртуальное окружение
+venv/
+env/
+.env/
+
+# Секреты и конфигурация (ОЧЕНЬ ВАЖНО)
+.env
+service_account.json
+
+# Локальные базы данных (чтобы не затирать данные на сервере при git pull)
+subs.json
+debts.json
+cat_map.json
+
+# Логи
+*.log
+bot_log.log*
+
+# Временные файлы бота
+temp_*.jpg
+graph.png
+expenses_*.xlsx
