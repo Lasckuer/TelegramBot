@@ -1,0 +1,27 @@
+Telegram-бот для учета личных финансов (Personal-Finance-Tracker-Bot)
+Copyright (C) 2026 [Lasckuer]
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+Вы должны были получить копию GNU General Public License вместе с этой программой. 
+Если нет, см. <https://www.gnu.org/licenses/>.
+
+--------------------------------------------------------------------------------
+Этот проект использует сторонние компоненты, распространяемые по лицензии MIT:
+* aiogram (https://github.com/aiogram/aiogram)
+* gspread (https://github.com/burnash/gspread)
+
+Компоненты под лицензией BSD 3-Clause:
+* pandas (https://github.com/pandas-dev/pandas)
+* python-dotenv (https://github.com/theskumar/python-dotenv)
+
+Компоненты под лицензией PSF:
+* matplotlib (https://matplotlib.org/)
