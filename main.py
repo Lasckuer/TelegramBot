@@ -5,10 +5,11 @@ from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN
-from handlers import router, db
-from jobs import send_weekly_report, check_daily_subscriptions, check_daily_debts
+from handlers import get_handlers_router
+from jobs import send_weekly_report, check_daily_subscriptions
 from config import BOT_TOKEN, USER_ID
 from middlewares import SecurityMiddleware
+from utils import db
 
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -27,7 +28,7 @@ async def main():
     dp.message.middleware(SecurityMiddleware(USER_ID))
     dp.callback_query.middleware(SecurityMiddleware(USER_ID))
     
-    dp.include_router(router)
+    dp.include_router(get_handlers_router())
     
     # Настройка планировщика
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
