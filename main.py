@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN
 from handlers import router, db
-from jobs import send_weekly_report, check_daily_subscriptions
+from jobs import send_weekly_report, check_daily_subscriptions, check_daily_debts
 from config import BOT_TOKEN, USER_ID
 from middlewares import SecurityMiddleware
 

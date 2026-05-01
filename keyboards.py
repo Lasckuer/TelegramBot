@@ -6,7 +6,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 def get_main_menu():
     buttons = [
         [KeyboardButton(text="💸 Расходы"), KeyboardButton(text="💰 Доходы")],
-        [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="⚙️ Настройки")]
+        [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="⚙️ Настройки")],
+        [KeyboardButton(text="🤝 Долги")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -130,5 +131,25 @@ def get_inline_item_action_kb(row_idx: int):
          InlineKeyboardButton(text="✏️ Цену", callback_data=f"editprice_{row_idx}")],
         [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delconfirm_{row_idx}")],
         [InlineKeyboardButton(text="❌ Назад", callback_data="delcancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_debts_menu():
+    buttons = [
+        [InlineKeyboardButton(text="➕ Дать в долг", callback_data="menu_add_debt"),
+         InlineKeyboardButton(text="📋 Активные долги", callback_data="menu_list_debts")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_sub_action_kb(sub_idx: int):
+    buttons = [
+        [InlineKeyboardButton(text="✅ Списать", callback_data=f"subpay_{sub_idx}"),
+         InlineKeyboardButton(text="❌ Отмена", callback_data=f"subcancel_{sub_idx}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_debt_return_kb(debt_id: str):
+    buttons = [
+        [InlineKeyboardButton(text="💸 Вернул!", callback_data=f"debtret_{debt_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -29,3 +29,8 @@ class IncomeForm(StatesGroup):
     source = State()
     name = State()
     amount = State()
+    
+class DebtForm(StatesGroup):
+    person = State()
+    amount = State()
+    deadline = State()

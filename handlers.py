@@ -14,12 +14,27 @@ from states import ExpenseForm, LimitState, SearchState, SubState, ExportState, 
 from gsheets import GoogleTable
 from qr_scanner import decode_qr, fetch_receipt_data
 
+import aiohttp
+import time
+from states import DebtForm
+
 router = Router()
 db = GoogleTable()
 
 LIMIT = 50000
 SUBS_FILE = "subs.json"
 CAT_MAP_FILE = "cat_map.json"
+DEBTS_FILE = "debts.json"
+
+def load_debts():
+    if not os.path.exists(DEBTS_FILE):
+        return []
+    with open(DEBTS_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_debts(debts):
+    with open(DEBTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(debts, f, ensure_ascii=False, indent=4)
 
 def load_cat_map():
     if not os.path.exists(CAT_MAP_FILE):
@@ -113,15 +128,37 @@ async def process_name(message: types.Message, state: FSMContext):
 
 @router.message(ExpenseForm.price)
 async def process_price(message: types.Message, state: FSMContext):
-    if not message.text.replace('.','',1).isdigit():
-        return await message.answer("Введите только число!")
+    text = message.text.lower()
+    is_usd = False
     
-    if float(message.text) > LIMIT:
+    if '$' in text or 'usd' in text:
+        is_usd = True
+        text = text.replace('$', '').replace('usd', '').strip()
+        
+    if not text.replace('.', '', 1).isdigit():
+        return await message.answer("Введите только число (можно с $):")
+        
+    amount = float(text)
+    
+    if is_usd:
+        msg = await message.answer("🔄 Конвертирую по актуальному курсу...")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://api.exchangerate-api.com/v4/latest/USD") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        rate = data['rates'].get('RUB', 90)
+                        amount = math.ceil(amount * rate)
+        except Exception:
+            amount = math.ceil(amount * 90)
+        await msg.delete()
+        
+    if amount > LIMIT:
         await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {LIMIT}р!")
         
-    await state.update_data(price=message.text)
+    await state.update_data(price=str(int(amount)))
     await state.set_state(ExpenseForm.shop)
-    await message.answer("Магазин (или 'нет'):")
+    await message.answer(f"Сумма: {int(amount)}р.\nМагазин (или 'нет'):")
 
 @router.message(ExpenseForm.shop)
 async def process_shop(message: types.Message, state: FSMContext):
@@ -577,3 +614,104 @@ async def calendar_day(callback: types.CallbackQuery, state: FSMContext):
         
         if os.path.exists(file_path):
             os.remove(file_path)
+          
+# ==========================================
+# --- ДОЛГИ ---
+# ==========================================         
+            
+@router.callback_query(F.data.startswith("subpay_"))
+async def process_sub_payment(callback: types.CallbackQuery):
+    idx = int(callback.data.split("_")[1])
+    subs = load_subs()
+    if idx < len(subs):
+        sub = subs[idx]
+        db.add_expense(category="Ежемесячные", name=sub['name'], price=sub['amount'], shop="-")
+        await callback.message.edit_text(f"✅ Оплата <b>{sub['name']}</b> ({sub['amount']}р) занесена в расходы.", parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("subcancel_"))
+async def cancel_sub_payment(callback: types.CallbackQuery):
+    idx = int(callback.data.split("_")[1])
+    subs = load_subs()
+    if idx < len(subs):
+        await callback.message.edit_text(f"❌ Списание <b>{subs[idx]['name']}</b> пропущено.", parse_mode="HTML")
+    await callback.answer()
+
+@router.message(F.text == "🤝 Долги")
+async def debts_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("<b>Трекер долгов:</b>", reply_markup=kb.get_inline_debts_menu(), parse_mode="HTML")
+
+@router.callback_query(F.data == "menu_add_debt")
+async def add_debt_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.delete()
+    await callback.message.answer("Кому вы дали в долг?", reply_markup=kb.get_cancel_kb())
+    await state.set_state(DebtForm.person)
+    await callback.answer()
+
+@router.message(DebtForm.person)
+async def process_debt_person(message: types.Message, state: FSMContext):
+    if message.text == "Назад": return await main_menu(message, state)
+    await state.update_data(person=message.text)
+    await state.set_state(DebtForm.amount)
+    await message.answer("Какую сумму (число)?")
+
+@router.message(DebtForm.amount)
+async def process_debt_amount(message: types.Message, state: FSMContext):
+    if not message.text.isdigit(): return await message.answer("Только число!")
+    await state.update_data(amount=int(message.text))
+    await state.set_state(DebtForm.deadline)
+    await message.answer("До какого числа (формат ДД.ММ.ГГГГ)?")
+
+@router.message(DebtForm.deadline)
+async def process_debt_deadline(message: types.Message, state: FSMContext):
+    try:
+        datetime.strptime(message.text, "%d.%m.%Y")
+    except ValueError:
+        return await message.answer("Неверный формат! Введите как 15.05.2026:")
+        
+    data = await state.get_data()
+    debts = load_debts()
+    debt_id = str(int(time.time()))
+    
+    debts.append({
+        "id": debt_id,
+        "person": data['person'],
+        "amount": data['amount'],
+        "deadline": message.text
+    })
+    save_debts(debts)
+    
+    await message.answer(f"✅ Долг записан! Напомню {message.text}.", reply_markup=kb.get_main_menu())
+    await state.clear()
+
+@router.callback_query(F.data == "menu_list_debts")
+async def list_debts(callback: types.CallbackQuery):
+    debts = load_debts()
+    if not debts:
+        return await callback.message.edit_text("🎉 У вас нет активных долгов!", reply_markup=kb.get_inline_debts_menu())
+        
+    text = "<b>Активные долги:</b>\n\n"
+    for d in debts:
+        text += f"👤 <b>{d['person']}</b>: {d['amount']}р (До: {d['deadline']})\n"
+        
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_inline_debts_menu())
+    
+    for d in debts:
+        await callback.message.answer(f"Отметить возврат от {d['person']} ({d['amount']}р)?", reply_markup=kb.get_inline_debt_return_kb(d['id']))
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("debtret_"))
+async def process_debt_return(callback: types.CallbackQuery):
+    debt_id = callback.data.split("_")[1]
+    debts = load_debts()
+    debt_to_return = next((d for d in debts if d['id'] == debt_id), None)
+    
+    if debt_to_return:
+        db.add_income(source=f"Возврат долга ({debt_to_return['person']})", name="-", amount=debt_to_return['amount'])
+        debts = [d for d in debts if d['id'] != debt_id]
+        save_debts(debts)
+        await callback.message.edit_text(f"✅ Долг от <b>{debt_to_return['person']}</b> закрыт!\nСумма {debt_to_return['amount']}р добавлена в доходы.", parse_mode="HTML")
+    else:
+        await callback.message.edit_text("Этот долг уже закрыт.")
+    await callback.answer()
