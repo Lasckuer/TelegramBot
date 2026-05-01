@@ -10,6 +10,7 @@ class GoogleTable:
         creds = ServiceAccountCredentials.from_json_keyfile_name(JSON_KEYFILE, scope)
         self.client = gspread.authorize(creds)
         self.sheet = self.client.open_by_key(SPREADSHEET_ID).sheet1
+        self.income_sheet = self.client.open_by_key(SPREADSHEET_ID).worksheet("Доходы")
 
     def add_expense(self, category, name, price, shop="-"):
         date_now = datetime.now().strftime("%d.%m.%Y")
@@ -65,6 +66,15 @@ class GoogleTable:
     def delete_by_row(self, row_number):
         self.sheet.delete_rows(row_number)
         return True
+    
     def update_cell(self, row_idx: int, col_idx: int, value):
         self.sheet.update_cell(row_idx, col_idx, value)
         return True
+    
+    def add_income(self, source, name, amount):
+        date_now = datetime.now().strftime("%d.%m.%Y")
+        self.income_sheet.append_row([source, name, amount, date_now])
+        
+    def get_all_incomes(self):
+        records = self.income_sheet.get_all_records()
+        return pd.DataFrame(records)

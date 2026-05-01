@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 
 import keyboards as kb
-from states import ExpenseForm, LimitState, SearchState, SubState, ExportState
+from states import ExpenseForm, LimitState, SearchState, SubState, ExportState, IncomeForm
 from gsheets import GoogleTable
 from qr_scanner import decode_qr, fetch_receipt_data
 from states import EditState
@@ -523,3 +523,41 @@ async def compare_months(message: types.Message):
             text += f"➖ Потрачено ровно столько же ({total_curr}р)"
 
     await message.answer(text, parse_mode="HTML")
+    
+# ==========================================
+# --- ДОХОДЫ ---
+# ==========================================
+@router.message(F.text == "Доходы")
+async def incomes_menu(message: types.Message):
+    await message.answer("Раздел 'Доходы':", reply_markup=kb.get_incomes_menu())
+
+@router.message(F.text == "Внести доход")
+async def start_income(message: types.Message):
+    await message.answer("Выбери источник дохода:", reply_markup=kb.get_inline_income_categories_kb("addinc"))
+
+@router.callback_query(F.data.startswith("addinc_"))
+async def select_income_source(callback: types.CallbackQuery, state: FSMContext):
+    source = callback.data.split("_")[1]
+    await state.set_state(IncomeForm.source)
+    await state.update_data(source=source)
+    await state.set_state(IncomeForm.name)
+    await callback.message.edit_text(f"Источник: <b>{source}</b>.\nОт кого или за что этот доход?", parse_mode="HTML")
+    await callback.answer()
+
+@router.message(IncomeForm.name)
+async def process_income_name(message: types.Message, state: FSMContext):
+    if message.text == "Назад":
+        return await main_menu(message, state)
+    await state.update_data(name=message.text)
+    await state.set_state(IncomeForm.amount)
+    await message.answer("Введите сумму дохода:")
+
+@router.message(IncomeForm.amount)
+async def process_income_amount(message: types.Message, state: FSMContext):
+    if not message.text.replace('.', '', 1).isdigit():
+        return await message.answer("Введите только число!")
+    
+    data = await state.get_data()
+    db.add_income(data['source'], data['name'], int(float(message.text)))
+    await message.answer("✅ Доход успешно записан!", reply_markup=kb.get_incomes_menu())
+    await state.clear()

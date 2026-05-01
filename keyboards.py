@@ -7,7 +7,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 
 def get_main_menu():
     buttons = [
-        [KeyboardButton(text="Расходы"), KeyboardButton(text="Настройки")]
+        [KeyboardButton(text="Расходы"), KeyboardButton(text="Доходы")],
+        [KeyboardButton(text="Настройки")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -79,9 +80,23 @@ def get_calendar_kb(year: int = None, month: int = None):
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-# ==========================================
-# --- ИНЛАЙН КЛАВИАТУРЫ ---
-# ==========================================
+def get_incomes_menu():
+    buttons = [
+        [KeyboardButton(text="Внести доход")],
+        [KeyboardButton(text="Назад")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_inline_income_categories_kb(prefix: str):
+    buttons = [
+        [InlineKeyboardButton(text="Зарплата", callback_data=f"{prefix}_Зарплата"),
+         InlineKeyboardButton(text="Фриланс", callback_data=f"{prefix}_Фриланс")],
+        [InlineKeyboardButton(text="Кэшбэк/Бонусы", callback_data=f"{prefix}_Кэшбэк"),
+         InlineKeyboardButton(text="Переводы", callback_data=f"{prefix}_Переводы")],
+        [InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_inline_categories_kb(prefix: str):
     buttons = [
         [InlineKeyboardButton(text="Продукты", callback_data=f"{prefix}_Продукты"),

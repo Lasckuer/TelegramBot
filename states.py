@@ -24,3 +24,8 @@ class SubState(StatesGroup):
 class ExportState(StatesGroup):
     start_date = State()
     end_date = State()
+
+class IncomeForm(StatesGroup):
+    source = State()
+    name = State()
+    amount = State()
