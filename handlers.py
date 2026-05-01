@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 
 import keyboards as kb
-from states import ExpenseForm, DeleteState, LimitState, SearchState, SubState, ExportState
+from states import ExpenseForm, LimitState, SearchState, SubState, ExportState
 from gsheets import GoogleTable
 from qr_scanner import decode_qr, fetch_receipt_data
 
@@ -261,65 +261,21 @@ async def process_page_callback(callback: types.CallbackQuery, state: FSMContext
     await callback.answer()
 
 # ==========================================
-# --- Удаление записей ---
-# ==========================================
-@router.message(DeleteState.selecting_category)
-async def list_items_to_delete(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        return await main_menu(message, state)
-
-    items = db.get_records_by_category(message.text)
-    if not items:
-        await message.answer("Записей не найдено.", reply_markup=kb.get_expenses_menu())
-        await state.clear()
-        return
-
-    response = f"Выберите номер для удаления ({message.text}):\n\n"
-    buttons = []
-    delete_map = {}
-    
-    for i, item in enumerate(items, 1):
-        response += f"{i}. {item.get('Название')} — {item.get('Стоимость')}р\n"
-        delete_map[str(i)] = item['row_idx']
-        buttons.append([KeyboardButton(text=str(i))])
-    
-    buttons.append([KeyboardButton(text="Назад")])
-    await state.update_data(delete_map=delete_map)
-    await state.set_state(DeleteState.selecting_item)
-    await message.answer(response, reply_markup=ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True))
-
-@router.message(DeleteState.selecting_item)
-async def confirm_delete(message: types.Message, state: FSMContext):
-    if message.text == "Назад":
-        return await main_menu(message, state)
-
-    data = await state.get_data()
-    row = data.get('delete_map', {}).get(message.text)
-    
-    if row and db.delete_by_row(int(row)):
-        await message.answer("✅ Удалено.", reply_markup=kb.get_expenses_menu())
-    else:
-        await message.answer("Ошибка.")
-    await state.clear()
-
-# ==========================================
-# --- ВНЕСЕНИЕ РАСХОДА (РУЧНОЕ) ---
+# --- ВНЕСЕНИЕ РАСХОДА (ИНЛАЙН ВЫБОР) ---
 # ==========================================
 @router.message(F.text == "Внести расход")
 async def start_expense(message: types.Message):
-    await message.answer("Выбери категорию:", reply_markup=kb.get_categories_kb())
+    await message.answer("Выбери категорию:", reply_markup=kb.get_inline_categories_kb("addcat"))
 
-@router.message(F.text.in_(["Продукты", "Развлечения", "Ежемесячные", "Остальное"]))
-async def select_category_default(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state == DeleteState.selecting_category:
-        return 
-
+@router.callback_query(F.data.startswith("addcat_"))
+async def select_category_inline(callback: types.CallbackQuery, state: FSMContext):
+    category = callback.data.split("_")[1]
     await state.set_state(ExpenseForm.category)
-    await state.update_data(category=message.text)
+    await state.update_data(category=category)
     await state.set_state(ExpenseForm.name)
-    await message.answer(f"Внесение расхода в {message.text}. Введите название:", reply_markup=kb.get_cancel_kb())
-    
+    await callback.message.edit_text(f"Внесение расхода в <b>{category}</b>.\nВведите название:", parse_mode="HTML")
+    await callback.answer()
+
 @router.message(ExpenseForm.name)
 async def process_name(message: types.Message, state: FSMContext):
     if message.text == "Назад":
@@ -347,6 +303,51 @@ async def process_shop(message: types.Message, state: FSMContext):
     db.add_expense(data['category'], data['name'], data['price'], shop)
     await message.answer("✅ Записано!", reply_markup=kb.get_expenses_menu())
     await state.clear()
+
+# ==========================================
+# --- УДАЛЕНИЕ ЗАПИСИ (ИНЛАЙН) ---
+# ==========================================
+@router.message(F.text == "Удалить запись")
+async def start_delete_inline(message: types.Message):
+    await message.answer("В какой категории удалить?", reply_markup=kb.get_inline_categories_kb("delcat"))
+
+@router.callback_query(F.data.startswith("delcat_"))
+async def show_items_to_delete(callback: types.CallbackQuery):
+    category = callback.data.split("_")[1]
+    items = db.get_records_by_category(category)
+    
+    if not items:
+        await callback.message.edit_text(f"В категории «{category}» записей не найдено.")
+        return await callback.answer()
+    
+    await callback.message.edit_text(
+        f"Последние записи ({category}):\nВыберите для удаления:", 
+        reply_markup=kb.get_inline_delete_items_kb(items)
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("delitem_"))
+async def confirm_delete_inline(callback: types.CallbackQuery):
+    row_idx = int(callback.data.split("_")[1])
+    await callback.message.edit_text(
+        "Вы уверены, что хотите удалить эту запись?", 
+        reply_markup=kb.get_inline_confirm_kb(row_idx)
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("delconfirm_"))
+async def execute_delete_inline(callback: types.CallbackQuery):
+    row_idx = int(callback.data.split("_")[1])
+    if db.delete_by_row(row_idx):
+        await callback.message.edit_text("✅ Запись успешно удалена.")
+    else:
+        await callback.message.edit_text("❌ Ошибка при удалении.")
+    await callback.answer()
+
+@router.callback_query(F.data == "delcancel")
+async def cancel_delete_inline(callback: types.CallbackQuery):
+    await callback.message.edit_text("Действие отменено.")
+    await callback.answer()
 
 # ==========================================
 # --- ВНЕСЕНИЕ РАСХОДА (QR ЧЕК) ---
@@ -406,14 +407,6 @@ async def handle_receipt_photo(message: types.Message, bot: Bot):
     except Exception as e:
         print(f"Непредвиденная ошибка в чеке: {e}")
         await message.answer("❌ Произошла ошибка при обработке данных чека.", reply_markup=kb.get_expenses_menu())
-        
-# ==========================================
-# --- УДАЛЕНИЕ ЗАПИСИ ---
-# ==========================================
-@router.message(F.text == "Удалить запись")
-async def start_delete(message: types.Message, state: FSMContext):
-    await state.set_state(DeleteState.selecting_category) 
-    await message.answer("В какой категории удалить?", reply_markup=kb.get_categories_kb())
 
 # ==========================================
 # --- ОТЧЕТЫ И ЛИМИТЫ ---

@@ -6,10 +6,6 @@ class ExpenseForm(StatesGroup):
     price = State()
     shop = State()
 
-class DeleteState(StatesGroup):
-    selecting_category = State()
-    selecting_item = State()
-
 class LimitState(StatesGroup):
     waiting_for_limit = State()
 

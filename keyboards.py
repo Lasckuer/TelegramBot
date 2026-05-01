@@ -28,14 +28,6 @@ def get_settings_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_categories_kb():
-    buttons = [
-        [KeyboardButton(text="Продукты"), KeyboardButton(text="Развлечения")],
-        [KeyboardButton(text="Ежемесячные"), KeyboardButton(text="Остальное")],
-        [KeyboardButton(text="Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
 def get_cancel_kb():
     buttons = [[KeyboardButton(text="Назад")]]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -86,3 +78,31 @@ def get_calendar_kb(year: int = None, month: int = None):
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+# ==========================================
+# --- ИНЛАЙН КЛАВИАТУРЫ ---
+# ==========================================
+def get_inline_categories_kb(prefix: str):
+    buttons = [
+        [InlineKeyboardButton(text="Продукты", callback_data=f"{prefix}_Продукты"),
+         InlineKeyboardButton(text="Развлечения", callback_data=f"{prefix}_Развлечения")],
+        [InlineKeyboardButton(text="Ежемесячные", callback_data=f"{prefix}_Ежемесячные"),
+         InlineKeyboardButton(text="Остальное", callback_data=f"{prefix}_Остальное")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_delete_items_kb(items: list):
+    buttons = []
+    for item in items:
+        text = f"{item.get('Название', 'Без названия')} — {item.get('Стоимость', 0)}р"
+        row_idx = item.get('row_idx')
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"delitem_{row_idx}")])
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_confirm_kb(row_idx: int):
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"delconfirm_{row_idx}"),
+         InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
