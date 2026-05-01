@@ -1,4 +1,5 @@
 import gspread
+import pandas as pd
 from oauth2client.service_account import ServiceAccountCredentials
 from config import SPREADSHEET_ID, JSON_KEYFILE
 from datetime import datetime
@@ -11,15 +12,12 @@ class GoogleTable:
         self.sheet = self.client.open_by_key(SPREADSHEET_ID).sheet1
 
     def add_expense(self, category, name, price, shop="-"):
-        date_now = datetime.now().strftime("%d.%m.%Y %H:%M")
-        # Проверка дубликатов
-        all_records = self.sheet.get_all_records()
-        for record in all_records:
-            if record.get('Название') == name and str(record.get('Стоимость')) == str(price):
-                return "exists"
-        
+        date_now = datetime.now().strftime("%d.%m.%Y")
         self.sheet.append_row([category, name, price, shop, date_now])
-        return "success"
+        
+    def get_all_df(self):
+        records = self.sheet.get_all_records()
+        return pd.DataFrame(records)
 
     def delete_last_record(self):
         all_values = self.sheet.get_all_values()
@@ -48,10 +46,10 @@ class GoogleTable:
             report[cat] = report.get(cat, 0) + price
             total += price
         
-        msg = "📊 **Аналитика:**\n"
+        msg = "📊 Аналитика:\n"
         for cat, sum_val in report.items():
             msg += f"🔹 {cat}: {sum_val}р\n"
-        msg += f"\n💰 **Итого: {total}р**"
+        msg += f"\n💰 Итого: {total}р"
         return msg
     
     def get_records_by_category(self, category):
@@ -65,8 +63,5 @@ class GoogleTable:
         return filtered[-10:] # Возвращаем последние 10
 
     def delete_by_row(self, row_number):
-        try:
-            self.sheet.delete_rows(row_number)
-            return True
-        except:
-            return False
+        self.sheet.delete_rows(row_number)
+        return True
