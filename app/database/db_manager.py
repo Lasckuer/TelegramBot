@@ -88,9 +88,13 @@ class DatabaseManager:
         except Exception:
             return False
 
-    def get_all_df(self, user_id, table="expenses"):
-        query = f"SELECT * FROM {table} WHERE user_id = ?"
-        return pd.read_sql_query(query, self.conn, params=(user_id,))
+    def get_all_df(self, user_id=None, table="expenses"):
+        if user_id:
+            query = f"SELECT * FROM {table} WHERE user_id = ?"
+            return pd.read_sql_query(query, self.conn, params=(user_id,))
+        else:
+            query = f"SELECT * FROM {table}"
+            return pd.read_sql_query(query, self.conn)
 
     def get_user_limit(self, user_id):
         query = "SELECT monthly_limit FROM user_settings WHERE user_id = ?"

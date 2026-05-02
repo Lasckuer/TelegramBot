@@ -84,3 +84,52 @@ def get_inline_item_action_kb(row_idx: int, prefix: str = "exp"):
         [InlineKeyboardButton(text="❌ Назад", callback_data="delcancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_debts_menu():
+    buttons = [
+        [InlineKeyboardButton(text="➕ Дать в долг", callback_data="menu_add_debt"),
+         InlineKeyboardButton(text="📋 Активные долги", callback_data="menu_list_debts")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_sub_action_kb(sub_idx: int):
+    buttons = [
+        [InlineKeyboardButton(text="✅ Списать", callback_data=f"subpay_{sub_idx}"),
+         InlineKeyboardButton(text="❌ Отмена", callback_data=f"subcancel_{sub_idx}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_inline_debt_return_kb(debt_id: str):
+    buttons = [
+        [InlineKeyboardButton(text="💸 Вернул!", callback_data=f"debtret_{debt_id}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_calendar_kb(year: int = None, month: int = None):
+    if year is None or month is None:
+        now = datetime.now()
+        year, month = now.year, now.month
+    keyboard = []
+    month_names = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+    keyboard.append([InlineKeyboardButton(text=f"{month_names[month]} {year}", callback_data="calendar_ignore")])
+    days_of_week = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    keyboard.append([InlineKeyboardButton(text=day, callback_data="calendar_ignore") for day in days_of_week])
+    month_calendar = calendar.monthcalendar(year, month)
+    for week in month_calendar:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="calendar_ignore"))
+            else:
+                row.append(InlineKeyboardButton(text=str(day), callback_data=f"calendar_day_{year}_{month}_{day}"))
+        keyboard.append(row)
+    prev_month = month - 1 if month > 1 else 12
+    prev_year = year if month > 1 else year - 1
+    next_month = month + 1 if month < 12 else 1
+    next_year = year if month < 12 else year + 1
+    keyboard.append([
+        InlineKeyboardButton(text="<", callback_data=f"calendar_nav_{prev_year}_{prev_month}"),
+        InlineKeyboardButton(text="Отмена", callback_data="calendar_cancel"),
+        InlineKeyboardButton(text=">", callback_data=f"calendar_nav_{next_year}_{next_month}")
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

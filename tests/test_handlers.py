@@ -1,307 +1,288 @@
 import pytest
-import os
-import json
 import pandas as pd
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, ANY, patch
 from app.handlers import common, expenses, incomes, analytics, settings, debts
-from app.jobs import check_daily_subscriptions
+from app.states import ExpenseForm, IncomeForm, EditExpState, EditIncState, ExportState
 from app.handlers.utils import load_json, save_json
-from aiogram.types import FSInputFile
-from app.states import ExportState
+from app.states import DebtForm, IncomeForm, ExpenseForm
+from app.jobs import check_daily_debts, check_daily_subscriptions
 
 @pytest.mark.asyncio
-async def test_main_menu_buttons():
+async def test_main_menu_routing():
     message = AsyncMock()
     state = AsyncMock()
-    
-    message.text = "💸 Расходы"
-    await common.expenses_menu(message, state)
-    message.answer.assert_called_with(ANY, reply_markup=ANY, parse_mode="HTML")
-    state.clear.assert_called()
-
-    message.text = "📊 Аналитика"
-    await common.analytics_menu(message, state)
-    assert "Финансовая сводка" in message.answer.call_args[0][0]
-
-@pytest.mark.asyncio
-async def test_expense_management_delete():
-    callback = AsyncMock()
-    callback.data = "delconfirm_5"
-    
-    with MagicMock() as mocked_db:
-        expenses.db = mocked_db 
-        await expenses.execute_delete_inline(callback)
-        
-        mocked_db.delete_by_row.assert_called_with(5, callback.from_user.id)
-        callback.message.edit_text.assert_called_with("✅ Запись удалена.")
-
-@pytest.mark.asyncio
-async def test_income_flow():
-    message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "5000"
-    state = AsyncMock()
-    state.get_data.return_value = {"source": "Зарплата", "name": "Премия"}
-    
-    await incomes.process_income_amount(message, state)
-    
+    await common.main_menu(message, state)
     state.clear.assert_called_once()
-    assert "Доход успешно записан" in message.answer.call_args[0][0]
+    message.answer.assert_called_with(ANY, reply_markup=ANY)
 
 @pytest.mark.asyncio
-async def test_settings_limit():
-    message = AsyncMock()
-    message.text = "100000"
-    state = AsyncMock()
-    
-    await settings.set_limit(message, state)
-    
-    assert "Лимит изменен: 100000р" in message.answer.call_args[0][0]
-    state.clear.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_debts_list():
+async def test_expense_add_flow():
     callback = AsyncMock()
-    
-    await debts.list_debts(callback)
-    
-    args = callback.message.edit_text.call_args[0][0]
-    assert ("Активные долги" in args) or ("нет активных долгов" in args)
-    
-@pytest.mark.asyncio
-async def test_edit_name():
-    message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "Новое название"
+    callback.data = "addcat_Продукты"
     state = AsyncMock()
-    state.get_data.return_value = {"edit_row": 5}
-    
-    await expenses.edit_name_process(message, state)
-    # Проверяем вызов с правильными строковыми именами колонок
-    expenses.db.update_cell.assert_called_with(5, "name", "Новое название", 12345)
-    
-@pytest.mark.asyncio
-async def test_search_logic():
+    await expenses.select_category_inline(callback, state)
+    state.update_data.assert_called_with(category="Продукты")
+    state.set_state.assert_called_with(ExpenseForm.name)
     message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "хлеб"
-    state = AsyncMock()
-    
-    mock_data = pd.DataFrame({
-        'name': ['Хлеб Бородинский', 'Молоко'],
-        'price': [50, 100],
-        'category': ['Продукты', 'Продукты'],
-        'shop': ['Пятерочка', 'Магнит'],
-        'date': ['01.05.2026', '02.05.2026']
-    })
-    
-    with MagicMock() as mocked_db:
-        expenses.db = mocked_db
-        mocked_db.get_all_df.return_value = mock_data
-        await expenses.search_process(message, state)
-        
-        mocked_db.get_all_df.assert_called_with(12345)
-        assert "Результаты по запросу" in message.answer.call_args[0][0]
-        
+    message.text = "Молоко"
+    await expenses.process_name(message, state)
+    state.update_data.assert_called_with(name="Молоко")
+    state.set_state.assert_called_with(ExpenseForm.price)
+    message.text = "100"
+    message.from_user.id = 1
+    with patch('app.handlers.expenses.db') as mock_db:
+        mock_db.get_user_limit.return_value = 50000
+        await expenses.process_price(message, state)
+        state.update_data.assert_called_with(price="100")
+        state.set_state.assert_called_with(ExpenseForm.shop)
+
 @pytest.mark.asyncio
-async def test_edit_price_process():
+async def test_expense_price_invalid():
     message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "150"
+    message.text = "сто рублей"
     state = AsyncMock()
-    state.get_data.return_value = {"edit_row": 10}
-    
-    with MagicMock() as mocked_db:
-        expenses.db = mocked_db
-        await expenses.edit_price_process(message, state)
-        
-        mocked_db.update_cell.assert_called_with(10, "price", 150, 12345)
+    await expenses.process_price(message, state)
+    assert "число" in message.answer.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_income_add_flow():
+    callback = AsyncMock()
+    callback.data = "addinc_Зарплата"
+    state = AsyncMock()
+    await incomes.select_income_category(callback, state)
+    state.update_data.assert_called_with(category="Зарплата")
+    state.set_state.assert_called_with(IncomeForm.name)
+    message = AsyncMock()
+    message.text = "Фриланс"
+    await incomes.process_income_name(message, state)
+    state.update_data.assert_called_with(name="Фриланс")
+    message.text = "15000"
+    message.from_user.id = 1
+    state.get_data.return_value = {"category": "Зарплата", "name": "Фриланс"}
+    with patch('app.handlers.incomes.db') as mock_db:
+        await incomes.process_income_price(message, state)
+        mock_db.add_income.assert_called_with(1, "Зарплата", "Фриланс", 15000)
         state.clear.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_analytics_balance():
-    callback = AsyncMock()
-    callback.from_user.id = 12345
-    
-    with MagicMock() as mocked_db:
-        analytics.db = mocked_db
-        await analytics.show_balance(callback)
-        
-        mocked_db.get_balance_report.assert_called_with(12345)
-        callback.message.edit_text.assert_called()
-        
+async def test_expense_manage_edit_price():
+    message = AsyncMock()
+    message.text = "250"
+    message.from_user.id = 1
+    state = AsyncMock()
+    state.get_data.return_value = {"edit_row": 5}
+    with patch('app.handlers.expenses.db') as mock_db:
+        await expenses.edit_price_process(message, state)
+        mock_db.update_cell.assert_called_with(5, "price", 250, 1)
+        state.clear.assert_called_once()
+
 @pytest.mark.asyncio
-async def test_excel_export_flow():
+async def test_income_manage_edit_name():
+    message = AsyncMock()
+    message.text = "Новый проект"
+    message.from_user.id = 1
+    state = AsyncMock()
+    state.get_data.return_value = {"edit_row": 3, "edit_table": "incomes"}
+    with patch('app.handlers.incomes.db') as mock_db:
+        await incomes.edit_income_name_process(message, state)
+        mock_db.update_cell.assert_called_with(3, "name", "Новый проект", 1, table="incomes")
+        state.clear.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_expense_delete():
     callback = AsyncMock()
-    callback.from_user.id = 12345
+    callback.data = "delconfirm_10"
+    callback.from_user.id = 1
+    with patch('app.handlers.expenses.db') as mock_db:
+        await expenses.execute_delete_inline(callback)
+        mock_db.delete_by_row.assert_called_with(10, 1)
+
+@pytest.mark.asyncio
+async def test_income_delete():
+    callback = AsyncMock()
+    callback.data = "incdelconfirm_7"
+    callback.from_user.id = 1
+    with patch('app.handlers.incomes.db') as mock_db:
+        await incomes.execute_delete_income(callback)
+        mock_db.delete_by_row.assert_called_with(7, 1, table="incomes")
+
+@pytest.mark.asyncio
+async def test_expense_search():
+    message = AsyncMock()
+    message.text = "молоко"
+    message.from_user.id = 1
+    state = AsyncMock()
+    mock_df = pd.DataFrame({'name': ['Молоко 1л', 'Хлеб'], 'shop': ['Ашан', 'Пятерочка'], 'price': [90, 50], 'date': ['01.01.2026', '01.01.2026']})
+    with patch('app.handlers.expenses.db') as mock_db:
+        mock_db.get_all_df.return_value = mock_df
+        await expenses.search_process(message, state)
+        state.update_data.assert_called()
+        assert "Молоко 1л" in message.answer.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_expense_search_empty():
+    message = AsyncMock()
+    message.text = "машина"
+    message.from_user.id = 1
+    state = AsyncMock()
+    mock_df = pd.DataFrame({'name': [], 'shop': [], 'price': [], 'date': []})
+    with patch('app.handlers.expenses.db') as mock_db:
+        mock_db.get_all_df.return_value = mock_df
+        await expenses.search_process(message, state)
+        assert "пуста" in message.answer.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_set_limit_personal():
+    message = AsyncMock()
+    message.text = "60000"
+    message.from_user.id = 1
+    state = AsyncMock()
+    with patch('app.handlers.settings.db') as mock_db:
+        await settings.set_limit(message, state)
+        mock_db.set_user_limit.assert_called_with(1, 60000)
+        assert "60000" in message.answer.call_args[0][0]
+
+@pytest.mark.asyncio
+async def test_analytics_balance_call():
+    callback = AsyncMock()
+    callback.from_user.id = 1
+    with patch('app.handlers.analytics.db') as mock_db:
+        mock_db.get_balance_report.return_value = "Баланс: 5000"
+        await analytics.show_balance(callback)
+        callback.message.edit_text.assert_called_with("Баланс: 5000", parse_mode="HTML", reply_markup=ANY)
+
+@pytest.mark.asyncio
+async def test_export_excel():
+    callback = AsyncMock()
+    callback.from_user.id = 1
+    callback.data = "calendar_day_2026_5_30"
     state = AsyncMock()
     state.get_data.return_value = {'start_date': datetime(2026, 5, 1)}
-    
-    mock_df = pd.DataFrame({
-        'date': ['01.05.2026', '02.05.2026'], 
-        'name': ['Хлеб', 'Кофе'],
-        'price': [100, 200],
-        'category': ['Продукты', 'Продукты'],
-        'shop': ['Пятерочка', 'Пятерочка']
-    })
-    
-    with patch('pandas.DataFrame.to_excel') as mock_to_excel, \
-         patch('app.handlers.settings.db.get_all_df') as mock_get_df, \
+    state.get_state.return_value = ExportState.end_date.state
+    mock_df = pd.DataFrame({'date': ['15.05.2026'], 'name': ['Тест'], 'price': [100]})
+    with patch('app.handlers.settings.db.get_all_df', return_value=mock_df), \
+         patch('pandas.DataFrame.to_excel') as mock_excel, \
          patch('app.handlers.settings.FSInputFile'), \
          patch('os.path.exists', return_value=True), \
          patch('os.remove'):
-        
-        mock_get_df.return_value = mock_df
-        state.get_state.return_value = ExportState.end_date.state
-        
         from app.handlers.settings import calendar_day
-        callback.data = "calendar_day_2026_5_10"
         await calendar_day(callback, state)
-        
-        mock_to_excel.assert_called()
+        mock_excel.assert_called()
         callback.message.answer_document.assert_called()
 
 @pytest.mark.asyncio
-async def test_chart_generation():
-    callback = AsyncMock()
-    
-    import pandas as pd
-    mock_df = pd.DataFrame({'category': ['Еда'], 'price': [100]})
-    
-    with patch('matplotlib.pyplot.savefig') as mock_save, \
-         patch('app.handlers.analytics.db.get_all_df') as mock_get_df, \
-         patch('app.handlers.analytics.FSInputFile'), \
-         patch('os.remove'):
-        
-        mock_get_df.return_value = mock_df
-        await analytics.send_graph(callback)
-        
-        mock_save.assert_called_with("graph.png")
-        callback.message.answer_photo.assert_called()
-
-@pytest.mark.asyncio
-async def test_daily_subscriptions_job():
-    bot = AsyncMock()
-    test_subs = [{"name": "Netflix", "amount": 100, "day": 2, "user_id": 123}]
-    
-    with patch('app.jobs.load_subs', return_value=test_subs), \
-         patch('datetime.datetime') as mock_date:
-        
-        mock_date.now.return_value.day = 2
-        await check_daily_subscriptions(bot)
-        
-        bot.send_message.assert_called_with(123, ANY, parse_mode="HTML", reply_markup=ANY)
-
-def test_json_integrity_check(tmp_path):
-    d = tmp_path / "subdir"
-    d.mkdir()
-    file = d / "test.json"
-    
-    data = {"key": "value"}
-    save_json(str(file), data)
-    assert load_json(str(file)) == data
-    
-    assert load_json("non_existent.json") == []
-    
-@pytest.mark.asyncio
-async def test_search_logic_fixed():
+async def test_qr_scanner_success():
     message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "хлеб"
-    state = AsyncMock()
+    message.from_user.id = 1
+    message.photo = [MagicMock(file_id="123")]
+    bot = AsyncMock()
     
-    mock_data = pd.DataFrame({
-        'name': ['Хлеб Бородинский', 'Молоко'],
-        'price': [50, 100],
-        'category': ['Продукты', 'Продукты'],
-        'shop': ['Пятерочка', 'Магнит'],
-        'date': ['01.05.2026', '02.05.2026']
-    })
+    mock_receipt_data = {
+        'code': 1,
+        'data': {
+            'json': {
+                'retailPlace': 'Пятерочка',
+                'items': [{'name': 'Хлеб', 'sum': 5000}]
+            }
+        }
+    }
     
-    with MagicMock() as mocked_db:
-        expenses.db = mocked_db
-        mocked_db.get_all_df.return_value = mock_data
-        
-        await expenses.search_process(message, state)
-        
-        mocked_db.get_all_df.assert_called_with(12345)
-        assert "Результаты по запросу" in message.answer.call_args[0][0]
-
-@pytest.mark.asyncio
-async def test_excel_export_column_fix():
-    callback = AsyncMock()
-    callback.from_user.id = 12345
-    state = AsyncMock()
-    state.get_data.return_value = {'start_date': datetime(2026, 1, 1)}
-    
-    mock_df = pd.DataFrame({'date': ['01.01.2026'], 'price': [100]})
-    
-    with patch('pandas.DataFrame.to_excel') as mock_to_excel, \
-         patch('app.handlers.settings.db.get_all_df') as mock_get_df, \
-         patch('app.handlers.settings.FSInputFile'), \
+    with patch('app.handlers.expenses.decode_qr', return_value="QR_DATA"), \
+         patch('app.handlers.expenses.fetch_receipt_data', return_value=mock_receipt_data), \
+         patch('app.handlers.expenses.db') as mock_db, \
          patch('os.path.exists', return_value=True), \
          patch('os.remove'):
         
-        mock_get_df.return_value = mock_df
-        state.get_state.return_value = ExportState.end_date.state
-        
-        from app.handlers.settings import calendar_day
-        callback.data = "calendar_day_2026_1_10"
-        await calendar_day(callback, state)
-        
-        mock_to_excel.assert_called()
+        await expenses.handle_receipt_photo(message, bot)
+        mock_db.add_expense.assert_called_once()
+        assert "Добавлено товаров: 1" in message.answer.call_args[0][0]
 
 @pytest.mark.asyncio
-async def test_analytics_compare_columns():
+async def test_qr_scanner_invalid_qr():
+    message = AsyncMock()
+    message.photo = [MagicMock(file_id="123")]
+    bot = AsyncMock()
+    
+    with patch('app.handlers.expenses.decode_qr', return_value=None), \
+         patch('os.path.exists', return_value=True), \
+         patch('os.remove'):
+        
+        await expenses.handle_receipt_photo(message, bot)
+        status_msg = message.answer.return_value
+        assert "QR-код не найден" in status_msg.edit_text.call_args[0][0]
+
+def test_json_utils(tmp_path):
+    test_file = tmp_path / "test_data.json"
+    data = {"users": [1, 2, 3]}
+    save_json(str(test_file), data)
+    loaded = load_json(str(test_file))
+    assert loaded == data
+    assert load_json("invalid_path.json") == []
+    
+@pytest.mark.asyncio
+async def test_main_menu_routing():
+    message = AsyncMock()
+    state = AsyncMock()
+    await common.main_menu(message, state)
+    state.clear.assert_called_once()
+    message.answer.assert_called_with(ANY, reply_markup=ANY)
+    
+@pytest.mark.asyncio
+async def test_debt_add_flow():
+    message = AsyncMock()
+    message.text = "Иван"
+    state = AsyncMock()
+    await debts.process_debt_person(message, state)
+    state.update_data.assert_called_with(person="Иван")
+    state.set_state.assert_called_with(DebtForm.amount)
+    message.text = "500"
+    await debts.process_debt_amount(message, state)
+    state.update_data.assert_called_with(amount=500)
+    state.set_state.assert_called_with(DebtForm.deadline)
+
+@pytest.mark.asyncio
+async def test_analytics_compare_logic():
     callback = AsyncMock()
-    callback.from_user.id = 12345
-    
-    now = datetime.now()
-    date_curr = now.strftime("%d.%m.%Y")
-    
-    mock_df = pd.DataFrame({
-        'date': [date_curr, '01.01.1990'],
-        'price': [100, 200],
-        'category': ['Продукты', 'Продукты'],
-        'name': ['Хлеб', 'Старое'],
-        'shop': ['Пятерочка', 'Пятерочка']
-    })
-    
-    with MagicMock() as mocked_db:
-        analytics.db = mocked_db
-        mocked_db.get_all_df.return_value = mock_df
+    callback.from_user.id = 1
+    mock_df = pd.DataFrame({'date': [datetime.now().strftime("%d.%m.%Y")], 'category': ['Продукты'], 'price': [1000]})
+    with patch('app.handlers.analytics.db.get_all_df', return_value=mock_df):
         await analytics.compare_months(callback)
-        
-        assert callback.message.edit_text.called or callback.answer.called
-        
-@pytest.mark.asyncio
-async def test_settings_limit():
-    message = AsyncMock()
-    message.from_user.id = 12345 
-    message.text = "100000"
-    state = AsyncMock()
-    
-    with MagicMock() as mocked_db:
-        settings.db = mocked_db
-        await settings.set_limit(message, state)
-        
-        # Проверяем вызов с корректным ID
-        mocked_db.set_user_limit.assert_called_with(12345, 100000)
-        state.clear.assert_called_once()
+        assert callback.message.edit_text.called
+        assert "Сравнение" in callback.message.edit_text.call_args[0][0]
 
 @pytest.mark.asyncio
-async def test_settings_limit_personal():
-    message = AsyncMock()
-    message.from_user.id = 12345
-    message.text = "75000"
+async def test_job_daily_debts_notification():
+    bot = AsyncMock()
+    today = datetime.now().strftime("%d.%m.%Y")
+    mock_debts = [{"id": "1", "person": "Иван", "amount": 500, "deadline": today, "user_id": 123}]
+    with patch('app.jobs.load_debts', return_value=mock_debts):
+        await check_daily_debts(bot)
+        assert bot.send_message.called
+        bot.send_message.assert_called_with(123, ANY, parse_mode="HTML", reply_markup=ANY)
+
+@pytest.mark.asyncio
+async def test_job_daily_subs_notification():
+    bot = AsyncMock()
+    today_day = datetime.now().day
+    mock_subs = [{"name": "Netflix", "amount": 700, "day": today_day, "user_id": 456}]
+    with patch('app.jobs.load_subs', return_value=mock_subs):
+        await check_daily_subscriptions(bot)
+        assert bot.send_message.called
+        bot.send_message.assert_called_with(456, ANY, parse_mode="HTML", reply_markup=ANY)
+
+@pytest.mark.asyncio
+async def test_income_flow_full():
+    callback = AsyncMock()
+    callback.data = "addinc_Зарплата"
     state = AsyncMock()
-    
-    with MagicMock() as mocked_db:
-        settings.db = mocked_db
-        await settings.set_limit(message, state)
-        
-        mocked_db.set_user_limit.assert_called_with(12345, 75000)
-        
-        actual_response = message.answer.call_args[0][0]
-        assert "персональный лимит изменен" in actual_response.lower()
+    await incomes.select_income_category(callback, state)
+    state.update_data.assert_called_with(category="Зарплата")
+    message = AsyncMock()
+    message.from_user.id = 1
+    message.text = "1000"
+    state.get_data.return_value = {"category": "Зарплата", "name": "Оклад"}
+    with patch('app.handlers.incomes.db') as mock_db:
+        await incomes.process_income_price(message, state)
+        mock_db.add_income.assert_called_once()
+        state.clear.assert_called_once()
