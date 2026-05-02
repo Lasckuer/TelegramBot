@@ -5,9 +5,8 @@ from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
 import app.keyboards.inline as kb_inline
 import app.keyboards.reply as kb_reply
-from app.states import ExpenseForm, SearchState, EditState
+from app.states import ExpenseForm, SearchState, EditExpState
 from app.database.db_manager import DatabaseManager
-# Используем обновленные асинхронные функции
 from app.handlers.qr_scanner import decode_qr, fetch_receipt_data 
 import aiohttp
 from app.handlers.common import main_menu
@@ -258,12 +257,12 @@ async def cancel_manage_inline(callback: types.CallbackQuery):
 async def edit_name_start(callback: types.CallbackQuery, state: FSMContext):
     row_idx = int(callback.data.split("_")[1])
     await state.update_data(edit_row=row_idx)
-    await state.set_state(EditState.waiting_for_new_name)
+    await state.set_state(EditExpState.waiting_for_new_name)
     await callback.message.delete()
     await callback.message.answer("Введите новое название:", reply_markup=kb_reply.get_cancel_kb())
     await callback.answer()
 
-@router.message(EditState.waiting_for_new_name)
+@router.message(EditExpState.waiting_for_new_name)
 async def edit_name_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.update_cell(data['edit_row'], "name", message.text, message.from_user.id)
@@ -274,12 +273,12 @@ async def edit_name_process(message: types.Message, state: FSMContext):
 async def edit_price_start(callback: types.CallbackQuery, state: FSMContext):
     row_idx = int(callback.data.split("_")[1])
     await state.update_data(edit_row=row_idx)
-    await state.set_state(EditState.waiting_for_new_price)
+    await state.set_state(EditExpState.waiting_for_new_price)
     await callback.message.delete()
     await callback.message.answer("Введите новую цену:", reply_markup=kb_reply.get_cancel_kb())
     await callback.answer()
 
-@router.message(EditState.waiting_for_new_price)
+@router.message(EditExpState.waiting_for_new_price)
 async def edit_price_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
     db.update_cell(data['edit_row'], "price", int(message.text), message.from_user.id)
