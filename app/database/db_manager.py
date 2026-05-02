@@ -41,8 +41,6 @@ class DatabaseManager:
                 )
             """)
 
-    # --- МЕТОДЫ ДЛЯ РАСХОДОВ ---
-
     def add_expense(self, user_id,category, name, price, shop="-"):
         """Добавление расхода."""
         date_now = datetime.now().strftime("%d.%m.%Y")
@@ -72,7 +70,6 @@ class DatabaseManager:
         query = "SELECT id, category, name, price, shop, date FROM expenses WHERE category = ? AND user_id = ? ORDER BY id DESC LIMIT 10"
         with self.conn:
             cursor = self.conn.execute(query, (category, user_id))
-            # row_idx заменяет индекс строки Google Таблиц для совместимости с логикой удаления
             return [
                 {"id": r[0], "Категория": r[1], "Название": r[2], "Стоимость": r[3], "Магазин": r[4], "Дата": r[5], "row_idx": r[0]}
                 for r in cursor.fetchall()
@@ -86,7 +83,6 @@ class DatabaseManager:
 
     def update_cell(self, row_id, column_name, value, user_id):
         """Обновление конкретного поля записи."""
-        # Безопасная подстановка имени колонки (внутренняя логика)
         allowed_columns = ["category", "name", "price", "shop", "date"]
         if column_name.lower() not in allowed_columns:
             return False
@@ -95,8 +91,6 @@ class DatabaseManager:
         with self.conn:
             self.conn.execute(query, (value, row_id, user_id))
             return True
-
-    # --- МЕТОДЫ ДЛЯ ДОХОДОВ ---
 
     def add_income(self, user_id, source, name, amount):
         """Добавление дохода."""
@@ -111,7 +105,6 @@ class DatabaseManager:
         """Получение всех доходов как DataFrame."""
         return pd.read_sql_query("SELECT * FROM incomes WHERE user_id = ?", self.conn, params=(user_id,))
 
-    # --- АНАЛИТИКА И ОТЧЕТЫ ---
 
     def get_monthly_analytics(self, user_id):
         """Генерация текстового отчета по категориям за все время."""
@@ -132,8 +125,6 @@ class DatabaseManager:
         """Расчет баланса за текущий месяц."""
         now = datetime.now()
         month_str = now.strftime("%m.%Y")
-
-        # Получаем расходы за текущий месяц через SQL
         exp_query = "SELECT SUM(price) FROM expenses WHERE date LIKE ? AND user_id = ?"
         inc_query = "SELECT SUM(amount) FROM incomes WHERE date LIKE ? AND user_id = ?"
         

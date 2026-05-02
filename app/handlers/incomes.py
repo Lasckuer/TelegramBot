@@ -21,7 +21,7 @@ DEBTS_FILE = "debts.json"
 @router.message(IncomeForm.confirm)
 async def process_income_confirm(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    user_id = message.from_user.id  # Получаем ID
+    user_id = message.from_user.id
     
     db.add_income(
         user_id=user_id,

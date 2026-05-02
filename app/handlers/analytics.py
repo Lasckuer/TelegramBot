@@ -23,7 +23,6 @@ async def send_graph(callback: types.CallbackQuery):
         await callback.answer("У вас пока нет данных для графика", show_alert=True)
         return
 
-    # Переименовываем для совместимости с кодом графика
     df = df.rename(columns={'price': 'Стоимость', 'category': 'Категория'})
     
 @router.callback_query(F.data == "menu_balance")

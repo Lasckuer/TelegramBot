@@ -27,9 +27,7 @@ async def main():
     
     dp.include_router(get_handlers_router())
     
-    # Настройка планировщика
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
-    # Передаем bot и db в функции планировщика
     scheduler.add_job(send_weekly_report, "cron", day_of_week="sun", hour=12, minute=0, args=[bot, db])
     scheduler.add_job(check_daily_subscriptions, "cron", hour=10, minute=0, args=[bot])
     scheduler.start()

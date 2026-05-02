@@ -1,19 +1,21 @@
 import math
 import os
+import asyncio
 from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
 import app.keyboards.inline as kb_inline
 import app.keyboards.reply as kb_reply
 from app.states import ExpenseForm, SearchState, EditState
 from app.database.db_manager import DatabaseManager
-from app.handlers.qr_scanner import decode_qr, fetch_receipt_data
+# Используем обновленные асинхронные функции
+from app.handlers.qr_scanner import decode_qr, fetch_receipt_data 
 import aiohttp
 from app.handlers.common import main_menu
 from app.handlers.utils import load_cat_map, save_cat_map, generate_page_text
 
 router = Router()
 db = DatabaseManager()
-        
+
 # ==========================================
 # --- РАСХОДЫ ---
 # ==========================================
@@ -21,9 +23,8 @@ db = DatabaseManager()
 @router.message(ExpenseForm.confirm)
 async def process_confirm(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    user_id = message.from_user.id  # Получаем ID пользователя Telegram
+    user_id = message.from_user.id
     
-    # Передаем user_id в базу
     db.add_expense(
         user_id=user_id, 
         category=data['category'], 
@@ -31,7 +32,7 @@ async def process_confirm(message: types.Message, state: FSMContext):
         price=data['price'], 
         shop=data.get('shop', '-')
     )
-    await message.answer("✅ Запись сохранена в вашу личную базу!")
+    await message.answer("✅ Запись сохранена!")
     await state.clear()
     
 @router.callback_query(F.data == "menu_add_exp")
@@ -46,7 +47,11 @@ async def select_category_inline(callback: types.CallbackQuery, state: FSMContex
     await state.update_data(category=category)
     await state.set_state(ExpenseForm.name)
     await callback.message.delete()
-    await callback.message.answer(f"Внесение расхода в <b>{category}</b>.\nВведите название:", parse_mode="HTML", reply_markup=kb_reply.get_cancel_kb())
+    await callback.message.answer(
+        f"Внесение расхода в <b>{category}</b>.\nВведите название:", 
+        parse_mode="HTML", 
+        reply_markup=kb_reply.get_cancel_kb()
+    )
     await callback.answer()
 
 @router.message(ExpenseForm.name)
@@ -85,13 +90,12 @@ async def process_price(message: types.Message, state: FSMContext):
             amount = math.ceil(amount * 90)
         await msg.delete()
         
+    # ПЕРСОНАЛЬНЫЙ ЛИМИТ: Получаем значение из БД для этого пользователя
     user_limit = db.get_user_limit(user_id)
     
     if amount > user_limit:
         await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {user_limit}р!")
     
-    await state.update_data(price=str(int(amount)))
-        
     await state.update_data(price=str(int(amount)))
     await state.set_state(ExpenseForm.shop)
     await message.answer(f"Сумма: {int(amount)}р.\nМагазин (или 'нет'):")
@@ -116,50 +120,62 @@ async def process_shop(message: types.Message, state: FSMContext):
 async def ask_for_receipt(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.delete()
-    await callback.message.answer("Отправь мне фотографию QR-кода с чека (без сжатия или крупным планом).", reply_markup=kb_reply.get_cancel_kb())
+    await callback.message.answer(
+        "Отправь мне фотографию QR-кода с чека.", 
+        reply_markup=kb_reply.get_cancel_kb()
+    )
     await callback.answer()
 
 @router.message(F.photo)
 async def handle_receipt_photo(message: types.Message, bot: Bot):
-    await message.answer("⏳ Анализирую QR-код...")
+    status_msg = await message.answer("⌛ Обрабатываю фото...")
+    await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
     photo = message.photo[-1]
     file_path = f"temp_{photo.file_id}.jpg"
     await bot.download(photo, destination=file_path)
     
-    qr_string = decode_qr(file_path)
-    if os.path.exists(file_path):
-        os.remove(file_path) 
-    
-    if not qr_string:
-        return await message.answer("❌ QR-код не найден.", reply_markup=kb_reply.get_main_menu())
-    
-    await message.answer("🔍 Запрашиваю данные из ФНС...")
-    
     try:
+        qr_string = await decode_qr(file_path)
+        
+        if os.path.exists(file_path):
+            os.remove(file_path) 
+        
+        if not qr_string:
+            return await status_msg.edit_text("❌ QR-код не найден. Попробуйте еще раз.")
+        
+        await status_msg.edit_text("🔍 Запрашиваю данные из ФНС...")
         receipt_data = await fetch_receipt_data(qr_string)
+        
         if not receipt_data or receipt_data.get('code') != 1:
-            return await message.answer("❌ Ошибка получения данных чека.", reply_markup=kb_reply.get_main_menu())
+            error_info = receipt_data.get('data', "Ошибка получения данных") if receipt_data else "API не ответил"
+            return await status_msg.edit_text(f"❌ {error_info}")
         
         items = receipt_data['data']['json']['items']
-        added_count = 0
-        total_sum = 0
-        shop_name = receipt_data['data']['json'].get('user') or receipt_data['data']['json'].get('retailPlace', 'Магазин из чека')
+        user_id = message.from_user.id
+        shop_name = receipt_data['data']['json'].get('user') or receipt_data['data']['json'].get('retailPlace', 'Магазин')
         
         cmap = load_cat_map()
         assigned_cat = cmap.get(shop_name.lower().strip(), "Продукты")
         
+        total_sum = 0
         for item in items:
-            name = item.get('name', 'Неизвестный товар')
+            name = item.get('name', 'Товар')
             price = math.ceil(int(item.get('sum', 0)) / 100)
-            
-            db.add_expense(category=assigned_cat, name=name, price=price, shop=shop_name)
-            added_count += 1
+            db.add_expense(user_id=user_id, category=assigned_cat, name=name, price=price, shop=shop_name)
             total_sum += price
             
-        await message.answer(f"✅ Добавлено {added_count} позиций (Категория: {assigned_cat}).\nНа сумму: {total_sum}р.", reply_markup=kb_reply.get_main_menu())
+        await status_msg.delete()
+        await message.answer(
+            f"✅ Добавлено товаров: {len(items)}\nКатегория: {assigned_cat}\nИтог: {total_sum}р.", 
+            reply_markup=kb_reply.get_main_menu()
+        )
         
-    except Exception:
-        await message.answer("❌ Произошла ошибка при обработке.", reply_markup=kb_reply.get_main_menu())
+    except Exception as e:
+        if os.path.exists(file_path): os.remove(file_path)
+        await message.answer("❌ Ошибка при обработке.", reply_markup=kb_reply.get_main_menu())
+        print(f"QR Error: {e}")
+
 
 @router.callback_query(F.data == "menu_search_exp")
 async def search_start(callback: types.CallbackQuery, state: FSMContext):
@@ -181,8 +197,6 @@ async def search_process(message: types.Message, state: FSMContext):
         return await state.clear()
 
     query = message.text.lower()
-    
-    # Используем английские имена колонок из БД
     result = df[
         df['name'].astype(str).str.lower().str.contains(query, na=False) | 
         df['shop'].astype(str).str.lower().str.contains(query, na=False)
@@ -201,7 +215,6 @@ async def search_process(message: types.Message, state: FSMContext):
 @router.callback_query(F.data.startswith("page_"))
 async def process_page_callback(callback: types.CallbackQuery, state: FSMContext):
     page = int(callback.data.split("_")[1])
-    
     data = await state.get_data()
     matches = data.get("search_results", [])
     query = data.get("query", "")
