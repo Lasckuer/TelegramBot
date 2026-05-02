@@ -274,3 +274,34 @@ async def test_analytics_compare_columns():
         await analytics.compare_months(callback)
         
         assert callback.message.edit_text.called or callback.answer.called
+        
+@pytest.mark.asyncio
+async def test_settings_limit():
+    message = AsyncMock()
+    message.from_user.id = 12345 
+    message.text = "100000"
+    state = AsyncMock()
+    
+    with MagicMock() as mocked_db:
+        settings.db = mocked_db
+        await settings.set_limit(message, state)
+        
+        # Проверяем вызов с корректным ID
+        mocked_db.set_user_limit.assert_called_with(12345, 100000)
+        state.clear.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_settings_limit_personal():
+    message = AsyncMock()
+    message.from_user.id = 12345
+    message.text = "75000"
+    state = AsyncMock()
+    
+    with MagicMock() as mocked_db:
+        settings.db = mocked_db
+        await settings.set_limit(message, state)
+        
+        mocked_db.set_user_limit.assert_called_with(12345, 75000)
+        
+        actual_response = message.answer.call_args[0][0]
+        assert "персональный лимит изменен" in actual_response.lower()

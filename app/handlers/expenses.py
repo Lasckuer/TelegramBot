@@ -13,7 +13,6 @@ from app.handlers.utils import load_cat_map, save_cat_map, generate_page_text
 
 router = Router()
 db = DatabaseManager()
-LIMIT = 50000
         
 # ==========================================
 # --- РАСХОДЫ ---
@@ -71,6 +70,7 @@ async def process_price(message: types.Message, state: FSMContext):
         return await message.answer("Введите только число (можно с $):")
         
     amount = float(text)
+    user_id = message.from_user.id
     
     if is_usd:
         msg = await message.answer("🔄 Конвертирую по актуальному курсу...")
@@ -85,8 +85,12 @@ async def process_price(message: types.Message, state: FSMContext):
             amount = math.ceil(amount * 90)
         await msg.delete()
         
-    if amount > LIMIT:
-        await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {LIMIT}р!")
+    user_limit = db.get_user_limit(user_id)
+    
+    if amount > user_limit:
+        await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {user_limit}р!")
+    
+    await state.update_data(price=str(int(amount)))
         
     await state.update_data(price=str(int(amount)))
     await state.set_state(ExpenseForm.shop)

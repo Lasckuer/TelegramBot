@@ -33,7 +33,13 @@ class DatabaseManager:
                     amount REAL,
                     date TEXT
                 )
-             """)
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    monthly_limit REAL DEFAULT 50000
+                )
+            """)
 
     # --- МЕТОДЫ ДЛЯ РАСХОДОВ ---
 
@@ -151,3 +157,16 @@ class DatabaseManager:
             text += f"⚖️ Вы вышли в ноль."
             
         return text
+    
+    def set_user_limit(self, user_id, limit):
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO user_settings (user_id, monthly_limit) VALUES (?, ?)",
+                (user_id, limit)
+            )
+
+    def get_user_limit(self, user_id):
+        query = "SELECT monthly_limit FROM user_settings WHERE user_id = ?"
+        cursor = self.conn.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else 50000 # 50000 — лимит по умолчанию
