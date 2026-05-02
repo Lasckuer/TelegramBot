@@ -4,9 +4,9 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 import app.keyboards.inline as kb_inline
 import app.keyboards.reply as kb_reply
-from ..states import DebtForm
-from .common import main_menu
-from .utils import load_debts, save_debts, load_subs, db
+from app.states import DebtForm
+from app.handlers.common import main_menu
+from app.handlers.utils import load_debts, save_debts, load_subs, db
 
 router = Router()
 

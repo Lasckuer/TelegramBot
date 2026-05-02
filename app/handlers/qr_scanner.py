@@ -3,7 +3,7 @@ import asyncio
 import json
 from pyzbar.pyzbar import decode
 from PIL import Image
-from ..config import PROVERKA_CHEKA_TOKEN
+from app.config import PROVERKA_CHEKA_TOKEN
 
 def decode_qr(image_path: str) -> str:
     """Извлекает текст (строку ФНС) из QR-кода на фото."""

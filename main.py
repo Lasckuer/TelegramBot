@@ -7,8 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import BOT_TOKEN
 from app.handlers import get_handlers_router
 from app.jobs import send_weekly_report, check_daily_subscriptions
-from app.config import BOT_TOKEN, USER_ID
-from app.middlewares import SecurityMiddleware
+from app.config import BOT_TOKEN
 from app.handlers.utils import db
 
 log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,8 +24,6 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
     
-    dp.message.middleware(SecurityMiddleware(USER_ID))
-    dp.callback_query.middleware(SecurityMiddleware(USER_ID))
     
     dp.include_router(get_handlers_router())
     

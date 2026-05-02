@@ -1,9 +1,9 @@
 import os
 import json
 import app.keyboards.inline as kb_inline
-from ..gsheets import GoogleTable
+from app.database.db_manager import DatabaseManager
 
-db = GoogleTable()
+db = DatabaseManager()
 
 SUBS_FILE = "subs.json"
 CAT_MAP_FILE = "cat_map.json"
@@ -35,8 +35,8 @@ def generate_page_text(matches: list, query: str, page: int, per_page: int = 5):
 
     text = f"🔍 Результаты по запросу «{query}» (Стр. {page+1} из {total_pages}):\n\n"
     for row in page_items:
-        date_str = row.get('Дата', '-')
-        text += f"• <b>{row.get('Название', '-')}</b> — {row.get('Стоимость', 0)}р <i>({date_str})</i>\n"
+        date_str = row.get('date', '-')
+        text += f"• <b>{row.get('name', '-')}</b> — {row.get('price', 0)}р <i>({date_str})</i>\n"
 
     markup = kb_inline.get_pagination_kb(page, total_pages)
     return text, markup

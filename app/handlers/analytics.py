@@ -5,7 +5,7 @@ from aiogram import Router, F, types
 from aiogram.types import FSInputFile
 import app.keyboards.inline as kb_inline
 import app.keyboards.reply as kb_reply
-from .utils import db
+from app.handlers.utils import db
 
 router = Router()
 
@@ -13,9 +13,22 @@ router = Router()
 # ==========================================
 # --- АНАЛИТИКА ---
 # ==========================================
+@router.callback_query(F.data == "show_graph")
+async def send_graph(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    # Получаем DataFrame только для этого пользователя[cite: 3, 4]
+    df = db.get_all_df(user_id) 
+    
+    if df.empty:
+        await callback.answer("У вас пока нет данных для графика", show_alert=True)
+        return
+
+    # Переименовываем для совместимости с кодом графика
+    df = df.rename(columns={'price': 'Стоимость', 'category': 'Категория'})
+    
 @router.callback_query(F.data == "menu_balance")
 async def show_balance(callback: types.CallbackQuery):
-    report = db.get_balance_report()
+    report = db.get_balance_report(callback.from_user.id)
     await callback.message.edit_text(report, parse_mode="HTML", reply_markup=kb_inline.get_inline_analytics_menu())
     await callback.answer()
 
@@ -23,13 +36,13 @@ async def show_balance(callback: types.CallbackQuery):
 async def send_graph(callback: types.CallbackQuery):
     await callback.message.delete()
     msg = await callback.message.answer("Создаю график...")
-    df = db.get_all_df()
+    df = db.get_all_df(callback.from_user.id)
     if df.empty:
         await msg.delete()
         return await callback.message.answer("Нет данных для графика", reply_markup=kb_reply.get_main_menu())
     
-    df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
-    summary = df.groupby('Категория')['Стоимость'].sum()
+    df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
+    summary = df.groupby('category')['price'].sum()
     
     plt.figure(figsize=(10, 6))
     summary.plot(kind='pie', autopct='%1.1f%%', startangle=140)
@@ -50,13 +63,14 @@ async def send_graph(callback: types.CallbackQuery):
 async def compare_months(callback: types.CallbackQuery):
     from datetime import datetime
     
-    df = db.get_all_df()
-    if df.empty or 'Дата' not in df.columns:
+    user_id = callback.from_user.id
+    df = db.get_all_df(user_id)
+    if df.empty or 'date' not in df.columns:
         await callback.answer("Нет данных для сравнения.", show_alert=True)
         return
 
-    df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
-    df['Стоимость'] = pd.to_numeric(df['Стоимость'], errors='coerce').fillna(0)
+    df['date_dt'] = pd.to_datetime(df['date'], format="%d.%m.%Y", errors='coerce')
+    df['price'] = pd.to_numeric(df['price'], errors='coerce').fillna(0)
 
     now = datetime.now()
     curr_month, curr_year = now.month, now.year
@@ -66,11 +80,11 @@ async def compare_months(callback: types.CallbackQuery):
     else:
         prev_month, prev_year = curr_month - 1, curr_year
 
-    curr_df = df[(df['Дата_dt'].dt.month == curr_month) & (df['Дата_dt'].dt.year == curr_year)]
-    prev_df = df[(df['Дата_dt'].dt.month == prev_month) & (df['Дата_dt'].dt.year == prev_year)]
+    curr_df = df[(df['date_dt'].dt.month == curr_month) & (df['date_dt'].dt.year == curr_year)]
+    prev_df = df[(df['date_dt'].dt.month == prev_month) & (df['date_dt'].dt.year == prev_year)]
 
-    curr_grouped = curr_df.groupby('Категория')['Стоимость'].sum()
-    prev_grouped = prev_df.groupby('Категория')['Стоимость'].sum()
+    curr_grouped = curr_df.groupby('category')['price'].sum()
+    prev_grouped = prev_df.groupby('category')['price'].sum()
 
     all_categories = set(curr_grouped.index).union(set(prev_grouped.index))
 

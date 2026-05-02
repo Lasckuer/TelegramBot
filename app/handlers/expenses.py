@@ -4,20 +4,37 @@ from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
 import app.keyboards.inline as kb_inline
 import app.keyboards.reply as kb_reply
-from ..states import ExpenseForm, SearchState, EditState
-from ..gsheets import GoogleTable
-from .qr_scanner import decode_qr, fetch_receipt_data
+from app.states import ExpenseForm, SearchState, EditState
+from app.database.db_manager import DatabaseManager
+from app.handlers.qr_scanner import decode_qr, fetch_receipt_data
 import aiohttp
-from .common import main_menu
-from .utils import load_cat_map, save_cat_map, generate_page_text
+from app.handlers.common import main_menu
+from app.handlers.utils import load_cat_map, save_cat_map, generate_page_text
 
 router = Router()
-db = GoogleTable()
+db = DatabaseManager()
 LIMIT = 50000
         
 # ==========================================
 # --- РАСХОДЫ ---
 # ==========================================
+
+@router.message(ExpenseForm.confirm)
+async def process_confirm(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = message.from_user.id  # Получаем ID пользователя Telegram
+    
+    # Передаем user_id в базу
+    db.add_expense(
+        user_id=user_id, 
+        category=data['category'], 
+        name=data['name'], 
+        price=data['price'], 
+        shop=data.get('shop', '-')
+    )
+    await message.answer("✅ Запись сохранена в вашу личную базу!")
+    await state.clear()
+    
 @router.callback_query(F.data == "menu_add_exp")
 async def start_expense(callback: types.CallbackQuery):
     await callback.message.edit_text("Выбери категорию:", reply_markup=kb_inline.get_inline_categories_kb("addcat"))
@@ -79,7 +96,9 @@ async def process_price(message: types.Message, state: FSMContext):
 async def process_shop(message: types.Message, state: FSMContext):
     data = await state.get_data()
     shop = message.text if message.text.lower() != 'нет' else "-"
-    db.add_expense(data['category'], data['name'], data['price'], shop)
+    user_id = message.from_user.id
+    
+    db.add_expense(user_id, data['category'], data['name'], data['price'], shop)
     
     if shop != "-":
         cmap = load_cat_map()
@@ -150,18 +169,19 @@ async def search_process(message: types.Message, state: FSMContext):
     if message.text == "Назад":
         return await main_menu(message, state)
 
-    df = db.get_all_df()
+    user_id = message.from_user.id
+    df = db.get_all_df(user_id)
+    
     if df.empty:
         await message.answer("Таблица расходов пока пуста.", reply_markup=kb_reply.get_main_menu())
         return await state.clear()
 
     query = message.text.lower()
-    if 'Название' not in df.columns: df['Название'] = ""
-    if 'Магазин' not in df.columns: df['Магазин'] = ""
-
+    
+    # Используем английские имена колонок из БД
     result = df[
-        df['Название'].astype(str).str.lower().str.contains(query, na=False) | 
-        df['Магазин'].astype(str).str.lower().str.contains(query, na=False)
+        df['name'].astype(str).str.lower().str.contains(query, na=False) | 
+        df['shop'].astype(str).str.lower().str.contains(query, na=False)
     ]
     
     if result.empty:
@@ -197,7 +217,7 @@ async def start_manage_inline(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("mngcat_"))
 async def show_items_to_manage(callback: types.CallbackQuery):
     category = callback.data.split("_")[1]
-    items = db.get_records_by_category(category)
+    items = db.get_records_by_category(category, callback.from_user.id) 
     if not items:
         return await callback.message.edit_text(f"В категории «{category}» пусто.")
     await callback.message.edit_text(f"Последние записи ({category}):", reply_markup=kb_inline.get_inline_manage_items_kb(items))
@@ -210,7 +230,7 @@ async def item_actions_inline(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("delconfirm_"))
 async def execute_delete_inline(callback: types.CallbackQuery):
     row_idx = int(callback.data.split("_")[1])
-    db.delete_by_row(row_idx)
+    db.delete_by_row(row_idx, callback.from_user.id) 
     await callback.message.edit_text("✅ Запись удалена.")
 
 @router.callback_query(F.data == "delcancel")
@@ -229,7 +249,7 @@ async def edit_name_start(callback: types.CallbackQuery, state: FSMContext):
 @router.message(EditState.waiting_for_new_name)
 async def edit_name_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    db.update_cell(data['edit_row'], 2, message.text)
+    db.update_cell(data['edit_row'], "name", message.text, message.from_user.id)
     await message.answer("✅ Название обновлено!", reply_markup=kb_reply.get_main_menu())
     await state.clear()
     
@@ -245,6 +265,6 @@ async def edit_price_start(callback: types.CallbackQuery, state: FSMContext):
 @router.message(EditState.waiting_for_new_price)
 async def edit_price_process(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    db.update_cell(data['edit_row'], 3, int(message.text))
+    db.update_cell(data['edit_row'], "price", int(message.text), message.from_user.id)
     await message.answer("✅ Цена обновлена!", reply_markup=kb_reply.get_main_menu())
     await state.clear()

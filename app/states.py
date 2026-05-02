@@ -5,6 +5,7 @@ class ExpenseForm(StatesGroup):
     name = State()
     price = State()
     shop = State()
+    confirm = State()
 
 class EditState(StatesGroup):
     waiting_for_new_name = State()
@@ -29,6 +30,7 @@ class IncomeForm(StatesGroup):
     source = State()
     name = State()
     amount = State()
+    confirm = State()
     
 class DebtForm(StatesGroup):
     person = State()

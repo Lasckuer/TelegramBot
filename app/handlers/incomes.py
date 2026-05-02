@@ -3,12 +3,12 @@ import app.keyboards.reply as kb_reply
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 
-from ..states import IncomeForm
-from ..gsheets import GoogleTable
-from .common import main_menu
+from app.states import IncomeForm
+from app.database.db_manager import DatabaseManager
+from app.handlers.common import main_menu
 
 router = Router()
-db = GoogleTable()
+db = DatabaseManager()
 
 LIMIT = 50000
 SUBS_FILE = "subs.json"
@@ -18,6 +18,20 @@ DEBTS_FILE = "debts.json"
 # ==========================================
 # --- ДОХОДЫ ---
 # ==========================================
+@router.message(IncomeForm.confirm)
+async def process_income_confirm(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    user_id = message.from_user.id  # Получаем ID
+    
+    db.add_income(
+        user_id=user_id,
+        source=data['source'],
+        name=data['name'],
+        amount=data['amount']
+    )
+    await message.answer("✅ Доход успешно записан!")
+    await state.clear()
+    
 @router.callback_query(F.data == "menu_add_inc")
 async def start_income(callback: types.CallbackQuery):
     await callback.message.edit_text("Выбери источник дохода:", reply_markup=kb_inline.get_inline_income_categories_kb("addinc"))
@@ -47,7 +61,9 @@ async def process_income_amount(message: types.Message, state: FSMContext):
         return await message.answer("Введите только число!")
     
     data = await state.get_data()
-    db.add_income(data['source'], data['name'], int(float(message.text)))
+    user_id = message.from_user.id
+    db.add_income(user_id, data['source'], data['name'], int(float(message.text)))
+    
     await message.answer("✅ Доход успешно записан!", reply_markup=kb_reply.get_main_menu())
     await state.clear()
 

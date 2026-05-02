@@ -18,6 +18,8 @@ service_account.json
 subs.json
 debts.json
 cat_map.json
+app/database/finance_bot.db
+.db/
 
 # Логи
 *.log

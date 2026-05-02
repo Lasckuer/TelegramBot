@@ -7,13 +7,13 @@ from aiogram.types import FSInputFile
 
 import app.keyboards.reply as kb_reply
 import app.keyboards.inline as kb_inline
-from ..states import LimitState, SubState, ExportState
-from ..gsheets import GoogleTable
-from .utils import load_subs, save_subs
-from .common import main_menu
+from app.states import LimitState, SubState, ExportState
+from app.database.db_manager import DatabaseManager
+from app.handlers.utils import load_subs, save_subs
+from app.handlers.common import main_menu
 
 router = Router()
-db = GoogleTable()
+db = DatabaseManager()
 
 LIMIT = 50000
 SUBS_FILE = "subs.json"
@@ -114,13 +114,12 @@ async def calendar_day(callback: types.CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     year, month, day = int(parts[2]), int(parts[3]), int(parts[4])
     selected_date = datetime(year, month, day)
-
     current_state = await state.get_state()
 
     if current_state == ExportState.start_date.state:
         await state.update_data(start_date=selected_date)
         await callback.message.edit_text(
-            f"Начальная дата: {selected_date.strftime('%d.%m.%Y')}\nТеперь выберите конечную дату:",
+            f"Начальная дата: {selected_date.strftime('%d.%m.%Y')}\nВыберите конечную дату:",
             reply_markup=kb_inline.get_calendar_kb(year, month)
         )
         await state.set_state(ExportState.end_date)
@@ -129,29 +128,26 @@ async def calendar_day(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         start_date = data['start_date']
         end_date = selected_date
-
         if end_date < start_date:
             start_date, end_date = end_date, start_date
 
         await callback.message.delete()
-        await callback.message.answer(f"Формирую отчет с {start_date.strftime('%d.%m.%Y')} по {end_date.strftime('%d.%m.%Y')}...", reply_markup=kb_reply.get_main_menu())
+        await callback.message.answer(f"Формирую отчет...", reply_markup=kb_reply.get_main_menu())
         await state.clear()
 
-        df = db.get_all_df()
-        if df.empty or 'Дата' not in df.columns:
-            return await callback.message.answer("Таблица пуста или нет колонки с датами.")
+        df = db.get_all_df(callback.from_user.id)
+        if df.empty or 'date' not in df.columns:
+            return await callback.message.answer("Нет данных для экспорта.")
 
-        df['Дата_dt'] = pd.to_datetime(df['Дата'], format="%d.%m.%Y", errors='coerce')
-        filtered_df = df[(df['Дата_dt'] >= start_date) & (df['Дата_dt'] <= end_date)].copy()
-        filtered_df.drop(columns=['Дата_dt'], inplace=True, errors='ignore')
+        df['date_dt'] = pd.to_datetime(df['date'], format="%d.%m.%Y", errors='coerce')
+        filtered_df = df[(df['date_dt'] >= start_date) & (df['date_dt'] <= end_date)].copy()
+        filtered_df.drop(columns=['date_dt'], inplace=True, errors='ignore')
 
         if filtered_df.empty:
-            return await callback.message.answer("За выбранный период нет записей.")
+            return await callback.message.answer("За этот период записей нет.")
 
-        file_path = f"expenses_{start_date.strftime('%d%m%Y')}_{end_date.strftime('%d%m%Y')}.xlsx"
+        file_path = f"export_{callback.from_user.id}.xlsx"
         filtered_df.to_excel(file_path, index=False)
-        await callback.message.answer_document(FSInputFile(file_path), caption="Ваш отчет в Excel")
-        
+        await callback.message.answer_document(FSInputFile(file_path), caption="Excel отчет")
         if os.path.exists(file_path):
             os.remove(file_path)
-          
