@@ -178,18 +178,28 @@ class DatabaseManager:
             logger.error(f"Ошибка при подсчете записей: {e}")
             return 0
         
-    def get_expenses_paginated(self, user_id, limit=10, offset=0):
-        query = """
-            SELECT id, name, price, date 
-            FROM expenses 
-            WHERE user_id = ? 
-            ORDER BY id DESC 
-            LIMIT ? OFFSET ?
-        """
+    def get_expenses_paginated(self, user_id, category=None, limit=10, offset=0):
+        if category:
+            query = """
+                SELECT id, name, price, date, currency 
+                FROM expenses 
+                WHERE user_id = ? AND category = ?
+                ORDER BY id DESC LIMIT ? OFFSET ?
+            """
+            params = (user_id, category, limit, offset)
+        else:
+            query = """
+                SELECT id, name, price, date, currency 
+                FROM expenses 
+                WHERE user_id = ? 
+                ORDER BY id DESC LIMIT ? OFFSET ?
+            """
+            params = (user_id, limit, offset)
+            
         try:
-            cursor = self.conn.execute(query, (user_id, limit, offset))
+            cursor = self.conn.execute(query, params)
             rows = cursor.fetchall()
-            return [{"id": r[0], "name": r[1], "price": r[2], "date": r[3]} for r in rows]
+            return [{"id": r[0], "name": r[1], "price": r[2], "date": r[3], "currency": r[4]} for r in rows]
         except Exception as e:
             logger.error(f"Ошибка пагинации расходов: {e}")
             return []

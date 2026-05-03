@@ -67,5 +67,5 @@ def get_pagination_keyboard(page: int, has_next: bool):
     if nav_row:
         buttons.append(nav_row)
     
-    buttons.append([InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
