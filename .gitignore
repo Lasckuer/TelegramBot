@@ -29,3 +29,5 @@ bot_log.log*
 temp_*.jpg
 graph.png
 expenses_*.xlsx
+
+HELP.md
