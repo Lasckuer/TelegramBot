@@ -13,3 +13,5 @@ python-dotenv==1.0.1
 openpyxl==3.1.2
 pytest==7.4.3
 pytest-asyncio==0.21.0
+aiohttp-proxy==0.3.0
+aiohttp-socks==0.3.0

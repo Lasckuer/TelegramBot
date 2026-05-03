@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -7,6 +8,7 @@ from app.config import BOT_TOKEN
 from app.handlers import get_handlers_router
 from app.jobs import send_weekly_report, check_daily_subscriptions
 from app.handlers.utils import db
+from aiogram.client.session.aiohttp import AiohttpSession
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +21,12 @@ console_handler.setFormatter(log_formatter)
 logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
 
 async def main():
-    bot = Bot(token=BOT_TOKEN)
+    proxy_url = os.getenv("PROXY_URL")
+    session = AiohttpSession(proxy=proxy_url)
+    
+    bot = Bot(token=BOT_TOKEN, session=session)
     dp = Dispatcher()
+    
     
     dp.include_router(get_handlers_router())
     
