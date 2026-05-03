@@ -179,7 +179,8 @@ class DatabaseManager:
             return 0
         
     def get_expenses_paginated(self, user_id, category=None, limit=10, offset=0):
-        if category:
+
+        if category and category != "Все":
             query = """
                 SELECT id, name, price, date, currency 
                 FROM expenses 

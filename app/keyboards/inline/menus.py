@@ -8,7 +8,7 @@ def get_inline_expenses_menu():
          InlineKeyboardButton(text="🧾 Скан чека", callback_data="menu_scan_exp")],
         [InlineKeyboardButton(text="🔍 Поиск", callback_data="menu_search_exp"),
          InlineKeyboardButton(text="✏️ Управление", callback_data="menu_manage_exp")],
-        [InlineKeyboardButton(text="📜 История расходов", callback_data="exp_page_0")]
+        [InlineKeyboardButton(text="📜 История расходов", callback_data="select_exp_list_cat")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -55,17 +55,23 @@ def get_cancel_broadcast_kb():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_pagination_keyboard(page: int, has_next: bool):
+def get_pagination_keyboard_with_cat(page: int, has_next: bool, category: str):
     buttons = []
     nav_row = []
     
     if page > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"exp_page_{page-1}"))
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"exp_page_{category}_{page-1}"))
     if has_next:
-        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"exp_page_{page+1}"))
+        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"exp_page_{category}_{page+1}"))
     
     if nav_row:
         buttons.append(nav_row)
     
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="select_history_cat")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_pagination_keyboard_back():
+    buttons = [
+        [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="main_menu")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
