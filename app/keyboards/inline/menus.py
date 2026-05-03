@@ -7,7 +7,7 @@ def get_inline_expenses_menu():
         [InlineKeyboardButton(text="✍️ Внести вручную", callback_data="menu_add_exp"),
          InlineKeyboardButton(text="🧾 Скан чека", callback_data="menu_scan_exp")],
         [InlineKeyboardButton(text="🔍 Поиск", callback_data="menu_search_exp"),
-         InlineKeyboardButton(text="✏️ Управление", callback_data="menu_manage_exp")]
+         InlineKeyboardButton(text="✏️ Управление", callback_data="menu_manage_exp")],
         [InlineKeyboardButton(text="📜 История расходов", callback_data="exp_page_0")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
