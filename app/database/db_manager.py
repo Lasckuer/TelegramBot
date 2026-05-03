@@ -150,3 +150,30 @@ class DatabaseManager:
                 )
         except Exception as e:
             logger.error(f"Ошибка при установке лимита пользователю {user_id}: {e}")
+            
+    def get_all_users_ids(self):
+        query = """
+            SELECT DISTINCT user_id FROM expenses 
+            UNION 
+            SELECT DISTINCT user_id FROM incomes 
+            UNION 
+            SELECT DISTINCT user_id FROM user_settings
+        """
+        try:
+            cursor = self.conn.execute(query)
+            return [row[0] for row in cursor.fetchall() if row[0] is not None]
+        except Exception as e:
+            logger.error(f"Ошибка при получении списка пользователей: {e}")
+            return []
+
+    def get_total_users_count(self):
+        return len(self.get_all_users_ids())
+
+    def get_total_records_count(self):
+        try:
+            cursor = self.conn.execute("SELECT (SELECT COUNT(*) FROM expenses) + (SELECT COUNT(*) FROM incomes)")
+            result = cursor.fetchone()
+            return result[0] if result and result[0] else 0
+        except Exception as e:
+            logger.error(f"Ошибка при подсчете записей: {e}")
+            return 0

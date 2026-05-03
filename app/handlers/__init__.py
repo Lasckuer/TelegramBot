@@ -6,6 +6,7 @@ from .incomes import incomes_router
 from .debts import debts_router
 from .analytics import analytics_router
 from .settings import settings_router
+from .admin import admin_router
 
 def get_handlers_router() -> Router:
     router = Router()
@@ -15,6 +16,7 @@ def get_handlers_router() -> Router:
         incomes_router,
         debts_router,
         analytics_router,
-        settings_router
+        settings_router,
+        admin_router
     )
     return router

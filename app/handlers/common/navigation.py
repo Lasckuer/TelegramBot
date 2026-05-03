@@ -22,4 +22,6 @@ async def analytics_menu(message: types.Message, state: FSMContext):
 @router.message(F.text == "⚙️ Настройки")
 async def settings_menu(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("<b>Настройки профиля:</b>", reply_markup=kb_inline.get_inline_settings_menu(), parse_mode="HTML")
+    current_user_id = message.from_user.id 
+    kb = kb_inline.get_inline_settings_menu(current_user_id)
+    await message.answer("<b>Настройки профиля:</b>", reply_markup=kb, parse_mode="HTML")

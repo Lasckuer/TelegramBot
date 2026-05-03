@@ -3,15 +3,21 @@ version: '3.8'
 services:
   bot:
     build: .
-    container_name: finance_bot
     restart: always
     env_file:
       - .env
-    volumes:
-      - ./app/database:/app/app/database
-      - ./bot_log.log:/app/bot_log.log
-      - ./subs.json:/app/subs.json
-      - ./debts.json:/app/debts.json
-      - ./cat_map.json:/app/cat_map.json
+    depends_on:
+      - redis
     environment:
-      - TZ=Europe/Moscow
+      - REDIS_URL=redis://redis:6379/0
+
+  redis:
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

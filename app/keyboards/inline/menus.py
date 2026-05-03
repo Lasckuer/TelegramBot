@@ -1,4 +1,6 @@
+import os
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+ADMIN_ID = str(os.getenv("ADMIN_ID", "0"))
 
 def get_inline_expenses_menu():
     buttons = [
@@ -26,10 +28,28 @@ def get_inline_analytics_menu():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_inline_settings_menu():
+def get_inline_settings_menu(user_id: int):
     buttons = [
         [InlineKeyboardButton(text="🎯 Лимиты", callback_data="menu_limits"),
          InlineKeyboardButton(text="🔔 Уведомления", callback_data="menu_notifications")],
         [InlineKeyboardButton(text="📥 Экспорт в Excel", callback_data="menu_export")]
+    ]
+    if str(user_id) == ADMIN_ID:
+        buttons.append([InlineKeyboardButton(text="Админ-панель", callback_data="open_admin_panel")])
+        
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_admin_panel_kb():
+    buttons = [
+        [InlineKeyboardButton(text="🛠 Тех. работы", callback_data="admin_tech_toggle")],
+        [InlineKeyboardButton(text="📝 Логи (Хвост)", callback_data="admin_logs")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="📊 Статус системы", callback_data="admin_stats")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_cancel_broadcast_kb():
+    buttons = [
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel_broadcast")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

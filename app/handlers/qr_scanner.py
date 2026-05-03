@@ -1,11 +1,12 @@
 import aiohttp
 import asyncio
-import json
 import logging
+import os
 from pyzbar.pyzbar import decode
 from PIL import Image
-from app.config import PROVERKA_CHEKA_TOKEN
 from concurrent.futures import ThreadPoolExecutor
+
+PROVERKA_CHEKA_TOKEN = os.getenv("PROVERKA_CHEKA_TOKEN")
 
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor()

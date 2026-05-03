@@ -1,0 +1,24 @@
+name: Deploy Telegram Bot
+
+on:
+  push:
+    branches:
+      - SQLite-db
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Connect to server and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /root/Personal-Finance-Tracker-Bot
+            
+            git pull origin SQLite-db
+            
+            docker-compose up -d --build

@@ -12,3 +12,5 @@ pytest
 pytest-asyncio
 aiohttp-proxy
 aiohttp-socks
+redis
+psutil
