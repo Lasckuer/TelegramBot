@@ -1,6 +1,7 @@
 import math
 import os
 import asyncio
+import re
 from aiogram import Router, F, Bot, types
 from aiogram.fsm.context import FSMContext
 import app.keyboards.inline as kb_inline
@@ -11,6 +12,7 @@ from app.handlers.qr_scanner import decode_qr, fetch_receipt_data
 import aiohttp
 from app.handlers.common import main_menu
 from app.handlers.utils import load_cat_map, save_cat_map, generate_page_text
+from app.handlers.crypto import get_live_rates
 
 router = Router()
 db = DatabaseManager()
@@ -61,43 +63,43 @@ async def process_name(message: types.Message, state: FSMContext):
     await state.set_state(ExpenseForm.price)
     await message.answer("Введите стоимость:")
 
+import re
+from app.handlers.crypto import get_live_rates
+
 @router.message(ExpenseForm.price)
 async def process_price(message: types.Message, state: FSMContext):
-    text = message.text.lower()
-    is_usd = False
+    text = message.text.lower().strip()
     
-    if '$' in text or 'usd' in text:
-        is_usd = True
-        text = text.replace('$', '').replace('usd', '').strip()
+    match = re.search(r'^([\d\.]+)', text)
+    if not match:
+        return await message.answer("Начните ввод с числа (например, 1500 или 20 usd).")
         
-    if not text.replace('.', '', 1).isdigit():
-        return await message.answer("Введите только число (можно с $):")
+    try:
+        amount = float(match.group(1))
+    except ValueError:
+        return await message.answer("Неверный формат числа.")
         
-    amount = float(text)
+    currency = 'RUB'
+    if 'usd' in text or '$' in text: currency = 'USD'
+    elif 'eur' in text or '€' in text: currency = 'EUR'
+    elif 'btc' in text: currency = 'BTC'
+    elif 'usdt' in text: currency = 'USDT'
+    
+    rates = await get_live_rates()
+    rate = rates.get(currency, 1.0)
+    amount_in_rub = amount * rate
+    
     user_id = message.from_user.id
-    
-    if is_usd:
-        msg = await message.answer("🔄 Конвертирую по актуальному курсу...")
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://api.exchangerate-api.com/v4/latest/USD") as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        rate = data['rates'].get('RUB', 90)
-                        amount = math.ceil(amount * rate)
-        except Exception:
-            amount = math.ceil(amount * 90)
-        await msg.delete()
-        
-    # ПЕРСОНАЛЬНЫЙ ЛИМИТ: Получаем значение из БД для этого пользователя
     user_limit = db.get_user_limit(user_id)
     
-    if amount > user_limit:
-        await message.answer(f"⚠️ Внимание! Трата превышает ваш лимит {user_limit}р!")
+    if amount_in_rub > user_limit:
+        await message.answer(f"⚠️ Внимание! Трата (~{amount_in_rub:,.0f} ₽) превышает ваш месячный лимит {user_limit} ₽!")
     
-    await state.update_data(price=str(int(amount)))
+    await state.update_data(price=amount, currency=currency)
     await state.set_state(ExpenseForm.shop)
-    await message.answer(f"Сумма: {int(amount)}р.\nМагазин (или 'нет'):")
+    
+    formatted_amount = int(amount) if amount.is_integer() else amount
+    await message.answer(f"Сумма: {formatted_amount} {currency}.\nВ каком магазине? (или 'нет'):")
 
 @router.message(ExpenseForm.shop)
 async def process_shop(message: types.Message, state: FSMContext):
@@ -105,14 +107,22 @@ async def process_shop(message: types.Message, state: FSMContext):
     shop = message.text if message.text.lower() != 'нет' else "-"
     user_id = message.from_user.id
     
-    db.add_expense(user_id, data['category'], data['name'], data['price'], shop)
+    db.add_expense(
+        user_id=user_id, 
+        category=data['category'], 
+        name=data['name'], 
+        price=data['price'], 
+        shop=shop,
+        currency=data.get('currency', 'RUB')
+    )
     
     if shop != "-":
+        from app.handlers.utils import load_cat_map, save_cat_map
         cmap = load_cat_map()
         cmap[shop.lower().strip()] = data['category']
         save_cat_map(cmap)
         
-    await message.answer("✅ Записано!", reply_markup=kb_reply.get_main_menu())
+    await message.answer("✅ Расход успешно записан!", reply_markup=kb_reply.get_main_menu())
     await state.clear()
 
 @router.callback_query(F.data == "menu_scan_exp")
@@ -284,3 +294,4 @@ async def edit_price_process(message: types.Message, state: FSMContext):
     db.update_cell(data['edit_row'], "price", int(message.text), message.from_user.id)
     await message.answer("✅ Цена обновлена!", reply_markup=kb_reply.get_main_menu())
     await state.clear()
+    

@@ -21,6 +21,7 @@ class DatabaseManager:
                     name TEXT,
                     price REAL,
                     shop TEXT,
+                    currency TEXT DEFAULT 'RUB',
                     date TEXT
                 )
              """)
@@ -31,6 +32,7 @@ class DatabaseManager:
                     category TEXT,
                     name TEXT,
                     price REAL,
+                    currency TEXT DEFAULT 'RUB',
                     date TEXT
                 )
             """)
@@ -41,20 +43,20 @@ class DatabaseManager:
                 )
             """)
 
-    def add_expense(self, user_id, category, name, price, shop="-"):
-        date_now = datetime.now().strftime("%d.%m.%Y")
+    def add_expense(self, user_id, category, name, price, shop="-", currency="RUB"):
+        date_now = datetime.now().strftime("%d.%m.%Y %H:%M")
         with self.conn:
             self.conn.execute(
-                "INSERT INTO expenses (user_id, category, name, price, shop, date) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, category, name, price, shop, date_now)
+                "INSERT INTO expenses (user_id, category, name, price, shop, currency, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, category, name, price, shop, currency, date_now)
             )
 
-    def add_income(self, user_id, category, name, price):
+    def add_income(self, user_id, category, name, price, currency="RUB"):
         date_now = datetime.now().strftime("%d.%m.%Y")
         with self.conn:
             self.conn.execute(
-                "INSERT INTO incomes (user_id, category, name, price, date) VALUES (?, ?, ?, ?, ?)",
-                (user_id, category, name, price, date_now)
+                "INSERT INTO incomes (user_id, category, name, price, currency, date) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, category, name, price, currency, date_now)
             )
 
     def get_records_by_category(self, category, user_id, table="expenses"):
@@ -108,21 +110,3 @@ class DatabaseManager:
                 "INSERT OR REPLACE INTO user_settings (user_id, monthly_limit) VALUES (?, ?)",
                 (user_id, limit)
             )
-
-    def get_balance_report(self, user_id):
-        now = datetime.now()
-        month_str = now.strftime("%m.%Y")
-        exp_query = "SELECT SUM(price) FROM expenses WHERE date LIKE ? AND user_id = ?"
-        inc_query = "SELECT SUM(price) FROM incomes WHERE date LIKE ? AND user_id = ?"
-        with self.conn:
-            total_exp = self.conn.execute(exp_query, (f"%{month_str}", user_id)).fetchone()[0] or 0
-            total_inc = self.conn.execute(inc_query, (f"%{month_str}", user_id)).fetchone()[0] or 0
-        balance = total_inc - total_exp
-        limit = self.get_user_limit(user_id)
-        text = f"📊 <b>Итог за {now.strftime('%B')}:</b>\n\n"
-        text += f"🟢 Доходы: {total_inc}р\n"
-        text += f"🔴 Расходы: {total_exp}р\n"
-        text += f"🎯 Лимит: {limit}р\n"
-        text += f"➖➖➖➖➖➖➖➖\n"
-        text += f"💰 Баланс: <b>{balance}р</b>\n"
-        return text

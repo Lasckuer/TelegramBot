@@ -23,10 +23,10 @@ def get_inline_analytics_menu():
     buttons = [
         [InlineKeyboardButton(text="⚖️ Баланс месяца", callback_data="menu_balance")],
         [InlineKeyboardButton(text="📈 График расходов", callback_data="menu_chart"),
-         InlineKeyboardButton(text="🗓 Сравнение", callback_data="menu_compare")]
+         InlineKeyboardButton(text="🗓 Сравнение", callback_data="menu_compare")],
+        [InlineKeyboardButton(text="💼 Мой портфель", callback_data="menu_portfolio")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 def get_inline_settings_menu():
     buttons = [
         [InlineKeyboardButton(text="🎯 Лимиты", callback_data="menu_limits"),
@@ -133,3 +133,4 @@ def get_calendar_kb(year: int = None, month: int = None):
         InlineKeyboardButton(text=">", callback_data=f"calendar_nav_{next_year}_{next_month}")
     ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+

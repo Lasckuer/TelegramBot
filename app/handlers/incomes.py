@@ -31,13 +31,47 @@ async def process_income_name(message: types.Message, state: FSMContext):
     await state.set_state(IncomeForm.price)
     await message.answer("Введите сумму:")
 
+import re
+
 @router.message(IncomeForm.price)
 async def process_income_price(message: types.Message, state: FSMContext):
-    if not message.text.replace('.', '', 1).isdigit():
-        return await message.answer("Введите число!")
+    text = message.text.lower().strip()
+    
+    match = re.search(r'^([\d\.]+)', text)
+    if not match:
+        return await message.answer("Пожалуйста, начните ввод с числа (например, 1000 или 150 usd).")
+    
+    try:
+        price = float(match.group(1))
+    except ValueError:
+        return await message.answer("Неверный формат числа.")
+    
+    currency = 'RUB'
+    if 'usd' in text or '$' in text:
+        currency = 'USD'
+    elif 'eur' in text or '€' in text:
+        currency = 'EUR'
+    elif 'btc' in text:
+        currency = 'BTC'
+    elif 'eth' in text:
+        currency = 'ETH'
+    elif 'usdt' in text:
+        currency = 'USDT'
+        
     data = await state.get_data()
-    db.add_income(message.from_user.id, data['category'], data['name'], int(float(message.text)))
-    await message.answer("✅ Доход записан!", reply_markup=kb_reply.get_main_menu())
+    
+    db.add_income(
+        user_id=message.from_user.id, 
+        category=data['category'], 
+        name=data['name'], 
+        price=price, 
+        currency=currency
+    )
+    
+    if price.is_integer():
+        price = int(price)
+        
+    await message.answer(f"✅ Доход записан: {price} {currency}!", reply_markup=kb_reply.get_main_menu())
     await state.clear()
 
 @router.callback_query(F.data == "menu_manage_inc")
