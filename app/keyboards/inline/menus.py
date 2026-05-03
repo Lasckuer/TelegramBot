@@ -53,3 +53,18 @@ def get_cancel_broadcast_kb():
         [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel_broadcast")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_pagination_keyboard(page: int, has_next: bool):
+    buttons = []
+    nav_row = []
+    
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"exp_page_{page-1}"))
+    if has_next:
+        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"exp_page_{page+1}"))
+    
+    if nav_row:
+        buttons.append(nav_row)
+    
+    buttons.append([InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
