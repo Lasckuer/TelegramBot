@@ -72,14 +72,25 @@ class DatabaseManager:
             logger.error(f"Ошибка при добавлении дохода: {e}")
 
     def get_records_by_category(self, category, user_id, table="expenses"):
-        cols = "id, category, name, price, shop, date" if table == "expenses" else "id, category, name, price, date"
+        if table == "expenses":
+            cols = "id, category, name, price, shop, date, currency"
+        else:
+            cols = "id, category, name, price, date, currency"
+            
         query = f"SELECT {cols} FROM {table} WHERE category = ? AND user_id = ? ORDER BY id DESC LIMIT 10"
         try:
             cursor = self.conn.execute(query, (category, user_id))
             rows = cursor.fetchall()
             result = []
             for r in rows:
-                item = {"id": r[0], "Название": r[2], "Стоимость": r[3], "Дата": r[-1], "row_idx": r[0]}
+                item = {
+                    "id": r[0], 
+                    "Название": r[2], 
+                    "Стоимость": r[3], 
+                    "Валюта": r[-1],  # Сохраняем валюту
+                    "Дата": r[-2] if table == "expenses" else r[-1], 
+                    "row_idx": r[0]
+                }
                 if table == "expenses":
                     item["Магазин"] = r[4]
                 result.append(item)

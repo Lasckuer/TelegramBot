@@ -14,7 +14,8 @@ def get_pagination_kb(page: int, total_pages: int):
 def get_inline_manage_items_kb(items: list, prefix: str = "manageitem"):
     builder = InlineKeyboardBuilder()
     for item in items:
-        text = f"{item.get('Название', '???')} — {item.get('Стоимость', 0)}р"
+        currency = item.get('Валюта', 'RUB')
+        text = f"{item.get('Название', '???')} — {item.get('Стоимость', 0)} {currency}"
         row_idx = item.get('row_idx')
         builder.row(InlineKeyboardButton(text=text, callback_data=f"{prefix}_{row_idx}"))
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="delcancel"))
