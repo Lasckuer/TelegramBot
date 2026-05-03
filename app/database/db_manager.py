@@ -1,7 +1,7 @@
-import sqlite3
-import pandas as pd
 import os
+import sqlite3
 import logging
+import pandas as pd
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,6 @@ class DatabaseManager:
                     "INSERT INTO expenses (user_id, category, name, price, shop, currency, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (user_id, category, name, price, shop, currency, date_now)
                 )
-            logger.info(f"Расход добавлен: {user_id}, {price} {currency}")
         except Exception as e:
             logger.error(f"Ошибка при добавлении расхода: {e}")
 
@@ -69,7 +68,6 @@ class DatabaseManager:
                     "INSERT INTO incomes (user_id, category, name, price, currency, date) VALUES (?, ?, ?, ?, ?, ?)",
                     (user_id, category, name, price, currency, date_now)
                 )
-            logger.info(f"Доход добавлен: {user_id}, {price} {currency}")
         except Exception as e:
             logger.error(f"Ошибка при добавлении дохода: {e}")
 
@@ -95,7 +93,6 @@ class DatabaseManager:
         try:
             with self.conn:
                 self.conn.execute(query, (row_id, user_id))
-            logger.info(f"Запись {row_id} удалена из {table}")
             return True
         except Exception as e:
             logger.error(f"Ошибка при удалении записи {row_id} из {table}: {e}")
@@ -106,7 +103,6 @@ class DatabaseManager:
         try:
            with self.conn:
                 self.conn.execute(query, (value, row_id, user_id))
-           logger.info(f"Запись {row_id} обновлена в {table}: {column_name}={value}")
            return True
         except Exception as e:
             logger.error(f"Ошибка при обновлении ячейки {column_name} в {table}: {e}")
@@ -141,6 +137,5 @@ class DatabaseManager:
                     "INSERT OR REPLACE INTO user_settings (user_id, monthly_limit) VALUES (?, ?)",
                     (user_id, limit)
                 )
-            logger.info(f"Лимит пользователя {user_id} установлен на {limit}")
         except Exception as e:
             logger.error(f"Ошибка при установке лимита пользователю {user_id}: {e}")

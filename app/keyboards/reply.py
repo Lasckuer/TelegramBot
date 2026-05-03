@@ -1,5 +1,3 @@
-import calendar
-from datetime import datetime
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 def get_main_menu():

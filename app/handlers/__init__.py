@@ -1,14 +1,20 @@
 from aiogram import Router
-from . import common, expenses, incomes, debts, analytics, settings
+
+from .common import common_router
+from .expenses import expenses_router
+from .incomes import incomes_router
+from .debts import debts_router
+from .analytics import analytics_router
+from .settings import settings_router
 
 def get_handlers_router() -> Router:
     router = Router()
     router.include_routers(
-        common.router,
-        expenses.router,
-        incomes.router,
-        debts.router,
-        analytics.router,
-        settings.router
+        common_router,
+        expenses_router,
+        incomes_router,
+        debts_router,
+        analytics_router,
+        settings_router
     )
     return router
