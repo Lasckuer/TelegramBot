@@ -22,11 +22,13 @@ def get_inline_incomes_menu():
 def get_inline_analytics_menu():
     buttons = [
         [InlineKeyboardButton(text="⚖️ Баланс месяца", callback_data="menu_balance")],
-        [InlineKeyboardButton(text="📈 График расходов", callback_data="menu_chart"),
+        [InlineKeyboardButton(text="📈 Тренд", callback_data="menu_trend"),
          InlineKeyboardButton(text="🗓 Сравнение", callback_data="menu_compare")],
-        [InlineKeyboardButton(text="💼 Мой портфель", callback_data="menu_portfolio")]
+        [InlineKeyboardButton(text="💼 Портфель", callback_data="menu_portfolio"),
+         InlineKeyboardButton(text="🤖 AI Советы", callback_data="menu_ai_tips")] # Новая кнопка
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_inline_settings_menu():
     buttons = [
         [InlineKeyboardButton(text="🎯 Лимиты", callback_data="menu_limits"),
