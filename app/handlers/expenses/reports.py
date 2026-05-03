@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from app.keyboards.inline.menus import get_pagination_keyboard
-from app.database.db_manager import db
+from app.handlers.utils import db
 
 router = Router()
 

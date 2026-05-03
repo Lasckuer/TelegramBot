@@ -193,3 +193,5 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка пагинации расходов: {e}")
             return []
+        
+    
